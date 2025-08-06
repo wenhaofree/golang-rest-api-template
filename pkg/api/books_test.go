@@ -145,7 +145,7 @@ func TestCreateBook(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	// Assertions to check the response
-	assert.Equal(t, http.StatusCreated, w.Code, "Expected HTTP status code 201")
+	assert.Equal(t, http.StatusOK, w.Code, "Expected HTTP status code 200")
 	assert.Contains(t, w.Body.String(), "New Book", "Response body should contain the book title")
 }
 
@@ -266,5 +266,5 @@ func TestDeleteBook(t *testing.T) {
 	r.ServeHTTP(w, req)
 
 	// Assert the response
-	assert.Equal(t, http.StatusNoContent, w.Code)
+	assert.Equal(t, http.StatusOK, w.Code)
 }

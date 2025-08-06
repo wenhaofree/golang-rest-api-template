@@ -1,12 +1,11 @@
 package middleware
 
 import (
-	"golang-rest-api-template/pkg/auth"
-	"net/http"
-	"strings"
-
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt"
+	"golang-rest-api-template/pkg/auth"
+	"golang-rest-api-template/pkg/response"
+	"strings"
 )
 
 func JWTAuth() gin.HandlerFunc {
@@ -14,13 +13,13 @@ func JWTAuth() gin.HandlerFunc {
 		const BearerSchema = "Bearer "
 		header := c.GetHeader("Authorization")
 		if header == "" {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Missing Authorization Header"})
+			response.Unauthorized(c, "Missing Authorization Header")
 			c.Abort()
 			return
 		}
 
 		if !strings.HasPrefix(header, BearerSchema) {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid Authorization Header"})
+			response.Unauthorized(c, "Invalid Authorization Header")
 			c.Abort()
 			return
 		}
@@ -32,14 +31,18 @@ func JWTAuth() gin.HandlerFunc {
 			return auth.JwtKey, nil
 		})
 
+		println("error:", err.Error())
+		println("tokenStr:", tokenStr)
+
 		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			//response.Unauthorized(c, "Invalid token")
+			response.Unauthorized(c, err.Error())
 			c.Abort()
 			return
 		}
 
 		if !token.Valid {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			response.Unauthorized(c, "Invalid token")
 			c.Abort()
 			return
 		}

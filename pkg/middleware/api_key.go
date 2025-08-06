@@ -1,7 +1,7 @@
 package middleware
 
 import (
-	"net/http"
+	"golang-rest-api-template/pkg/response"
 	"os"
 
 	"github.com/gin-gonic/gin"
@@ -13,9 +13,7 @@ func APIKeyAuth() gin.HandlerFunc {
 		if apiKey == os.Getenv("API_SECRET_KEY") {
 			c.Next()
 		} else {
-			c.JSON(http.StatusUnauthorized, gin.H{
-				"error": "Unauthorized",
-			})
+			response.Unauthorized(c, "Unauthorized")
 			c.Abort()
 		}
 	}

@@ -6,7 +6,7 @@ import (
 	"golang-rest-api-template/pkg/cache"
 	"golang-rest-api-template/pkg/database"
 	"golang-rest-api-template/pkg/models"
-	"net/http"
+	"golang-rest-api-template/pkg/response"
 	"strconv"
 	"time"
 
@@ -50,7 +50,7 @@ func NewBookRepository(db database.Database, redisClient cache.Cache, ctx *conte
 // @Success 200 {string} ok
 // @Router / [get]
 func (r *bookRepository) Healthcheck(c *gin.Context) {
-	c.JSON(http.StatusOK, "ok")
+	response.Success(c, "ok")
 }
 
 // FindBooks godoc
@@ -73,13 +73,13 @@ func (r *bookRepository) FindBooks(c *gin.Context) {
 	// Convert query params to integers
 	offset, err := strconv.Atoi(offsetQuery)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid offset format"})
+		response.BadRequest(c, "Invalid offset format")
 		return
 	}
 
 	limit, err := strconv.Atoi(limitQuery)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid limit format"})
+		response.BadRequest(c, "Invalid limit format")
 		return
 	}
 
@@ -91,10 +91,10 @@ func (r *bookRepository) FindBooks(c *gin.Context) {
 	if err == nil {
 		err := json.Unmarshal([]byte(cachedBooks), &books)
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to unmarshal cached data"})
+			response.InternalServerError(c, "Failed to unmarshal cached data")
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"data": books})
+		response.Success(c, books)
 		return
 	}
 
@@ -104,16 +104,16 @@ func (r *bookRepository) FindBooks(c *gin.Context) {
 	// Serialize books object and store it in Redis
 	serializedBooks, err := json.Marshal(books)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to marshal data"})
+		response.InternalServerError(c, "Failed to marshal data")
 		return
 	}
 	err = r.RedisClient.Set(*r.Ctx, cacheKey, serializedBooks, time.Minute).Err() // Here TTL is set to one hour
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to set cache"})
+		response.InternalServerError(c, "Failed to set cache")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": books})
+	response.Success(c, books)
 }
 
 // CreateBook godoc
@@ -132,13 +132,13 @@ func (r *bookRepository) FindBooks(c *gin.Context) {
 func (r *bookRepository) CreateBook(c *gin.Context) {
 	appCtx, exists := c.MustGet("appCtx").(*bookRepository)
 	if !exists {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
+		response.InternalServerError(c, "internal server error")
 		return
 	}
 	var input models.CreateBook
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
@@ -155,7 +155,7 @@ func (r *bookRepository) CreateBook(c *gin.Context) {
 		}
 	}
 
-	c.JSON(http.StatusCreated, gin.H{"data": book})
+	response.SuccessWithMessage(c, book, "Book created successfully")
 }
 
 // FindBook godoc
@@ -172,11 +172,11 @@ func (r *bookRepository) FindBook(c *gin.Context) {
 	var book models.Book
 
 	if err := r.DB.Where("id = ?", c.Param("id")).First(&book).Error(); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "book not found"})
+		response.NotFound(c, "book not found")
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"data": book})
+	response.Success(c, book)
 }
 
 // UpdateBook godoc
@@ -197,18 +197,18 @@ func (r *bookRepository) UpdateBook(c *gin.Context) {
 	var input models.UpdateBook
 
 	if err := r.DB.Where("id = ?", c.Param("id")).First(&book).Error(); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "book not found"})
+		response.NotFound(c, "book not found")
 		return
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		response.BadRequest(c, err.Error())
 		return
 	}
 
 	r.DB.Model(&book).Updates(models.Book{Title: input.Title, Author: input.Author})
 
-	c.JSON(http.StatusOK, gin.H{"data": book})
+	response.SuccessWithMessage(c, book, "Book updated successfully")
 }
 
 // DeleteBook godoc
@@ -225,11 +225,11 @@ func (r *bookRepository) DeleteBook(c *gin.Context) {
 	var book models.Book
 
 	if err := r.DB.Where("id = ?", c.Param("id")).First(&book).Error(); err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "book not found"})
+		response.NotFound(c, "book not found")
 		return
 	}
 
 	r.DB.Delete(&book)
 
-	c.JSON(http.StatusNoContent, gin.H{"data": true})
+	response.SuccessWithMessage(c, true, "Book deleted successfully")
 }
