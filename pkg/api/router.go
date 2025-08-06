@@ -27,7 +27,7 @@ func ContextMiddleware(bookRepository BookRepository) gin.HandlerFunc {
 
 func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db database.Database, redisClient cache.Cache, ctx *context.Context) *gin.Engine {
 	bookRepository := NewBookRepository(db, redisClient, ctx)
-	userRepository := NewUserRepository(db, ctx)
+	userRepository := NewUserRepository(db, redisClient, ctx)
 
 	r := gin.Default()
 	r.Use(ContextMiddleware(bookRepository))
@@ -51,6 +51,7 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 		v1.PUT("/books/:id", middleware.APIKeyAuth(), bookRepository.UpdateBook)
 		v1.DELETE("/books/:id", middleware.APIKeyAuth(), bookRepository.DeleteBook)
 
+		v1.GET("/users", middleware.APIKeyAuth(), userRepository.FindUsers)
 		v1.POST("/login", middleware.APIKeyAuth(), userRepository.LoginHandler)
 		v1.POST("/register", middleware.APIKeyAuth(), userRepository.RegisterHandler)
 	}

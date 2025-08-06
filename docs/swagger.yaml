@@ -40,6 +40,19 @@ definitions:
       title:
         type: string
     type: object
+  models.User:
+    properties:
+      created_at:
+        type: string
+      id:
+        type: integer
+      password:
+        type: string
+      updated_at:
+        type: string
+      username:
+        type: string
+    type: object
 externalDocs:
   description: OpenAPI
   url: https://swagger.io/resources/open-api/
@@ -269,7 +282,7 @@ paths:
       produces:
       - application/json
       responses:
-        "200":
+        "201":
           description: Successfully registered
           schema:
             type: string
@@ -284,6 +297,34 @@ paths:
       security:
       - ApiKeyAuth: []
       summary: Register a new user
+      tags:
+      - user
+  /users:
+    get:
+      description: Get a list of all users with optional pagination
+      parameters:
+      - default: 0
+        description: Offset for pagination
+        in: query
+        name: offset
+        type: integer
+      - default: 10
+        description: Limit for pagination
+        in: query
+        name: limit
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Successfully retrieved list of users
+          schema:
+            items:
+              $ref: '#/definitions/models.User'
+            type: array
+      security:
+      - ApiKeyAuth: []
+      summary: Get all users with pagination
       tags:
       - user
 securityDefinitions:
