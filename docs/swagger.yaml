@@ -1,5 +1,21 @@
 basePath: /api/v1
 definitions:
+  models.AuthProviderEnum:
+    enum:
+    - email
+    - apple_id
+    - google
+    - facebook
+    - github
+    - wechat
+    type: string
+    x-enum-varnames:
+    - AuthProviderEmail
+    - AuthProviderAppleID
+    - AuthProviderGoogle
+    - AuthProviderFacebook
+    - AuthProviderGithub
+    - AuthProviderWechat
   models.Book:
     properties:
       author:
@@ -25,13 +41,64 @@ definitions:
     type: object
   models.LoginUser:
     properties:
+      email:
+        type: string
       password:
         type: string
-      username:
+    required:
+    - email
+    - password
+    type: object
+  models.PlatformEnum:
+    enum:
+    - web
+    - mobile
+    - app
+    type: string
+    x-enum-varnames:
+    - PlatformWeb
+    - PlatformMobile
+    - PlatformApp
+  models.RegisterUser:
+    properties:
+      auth_provider:
+        $ref: '#/definitions/models.AuthProviderEnum'
+      email:
+        type: string
+      full_name:
+        type: string
+      password:
+        minLength: 6
+        type: string
+      platform:
+        $ref: '#/definitions/models.PlatformEnum'
+    required:
+    - email
+    - full_name
+    - password
+    type: object
+  models.ThirdPartyLoginUser:
+    properties:
+      auth_provider:
+        $ref: '#/definitions/models.AuthProviderEnum'
+      avatar_url:
+        type: string
+      email:
+        type: string
+      full_name:
+        type: string
+      platform:
+        $ref: '#/definitions/models.PlatformEnum'
+      provider_token:
+        description: 第三方平台的访问令牌，用于验证
+        type: string
+      provider_user_id:
         type: string
     required:
-    - password
-    - username
+    - auth_provider
+    - email
+    - platform
+    - provider_user_id
     type: object
   models.UpdateBook:
     properties:
@@ -40,17 +107,39 @@ definitions:
       title:
         type: string
     type: object
-  models.User:
+  models.UpdateUser:
     properties:
+      avatar_url:
+        type: string
+      full_name:
+        type: string
+      is_active:
+        type: boolean
+    type: object
+  models.UserResponse:
+    properties:
+      auth_provider:
+        $ref: '#/definitions/models.AuthProviderEnum'
+      avatar_url:
+        type: string
       created_at:
+        description: 时间字段统一放在一起
+        type: string
+      email:
+        type: string
+      full_name:
         type: string
       id:
-        type: integer
-      password:
         type: string
+      is_active:
+        type: boolean
+      is_superuser:
+        type: boolean
+      last_login:
+        type: string
+      platform:
+        $ref: '#/definitions/models.PlatformEnum'
       updated_at:
-        type: string
-      username:
         type: string
     type: object
 externalDocs:
@@ -85,6 +174,39 @@ paths:
       summary: ping example
       tags:
       - example
+  /auth/third-party:
+    post:
+      consumes:
+      - application/json
+      description: Authenticates or registers a user using third-party providers
+      parameters:
+      - description: Third-party login object
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.ThirdPartyLoginUser'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: JWT Token and user info
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "500":
+          description: Internal Server Error
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      summary: Third-party login (Apple ID, Google, etc.)
+      tags:
+      - user
   /books:
     get:
       description: Get a list of all books with optional pagination
@@ -234,8 +356,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Authenticates a user using username and password, returns a JWT
-        token if successful
+      description: Authenticates a user using email and password, returns a JWT token
+        if successful
       parameters:
       - description: User login object
         in: body
@@ -267,18 +389,101 @@ paths:
       summary: Authenticate a user
       tags:
       - user
+  /profile:
+    delete:
+      description: Soft delete the authenticated user's account (sets deleted_at timestamp)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Account deleted successfully
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "404":
+          description: User not found
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      summary: Soft delete user account
+      tags:
+      - user
+    get:
+      description: Get the profile of the authenticated user
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: User profile
+          schema:
+            $ref: '#/definitions/models.UserResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "404":
+          description: User not found
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      summary: Get user profile
+      tags:
+      - user
+    put:
+      consumes:
+      - application/json
+      description: Update the profile of the authenticated user
+      parameters:
+      - description: User update object
+        in: body
+        name: user
+        required: true
+        schema:
+          $ref: '#/definitions/models.UpdateUser'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: Updated user profile
+          schema:
+            $ref: '#/definitions/models.UserResponse'
+        "400":
+          description: Bad Request
+          schema:
+            type: string
+        "401":
+          description: Unauthorized
+          schema:
+            type: string
+        "404":
+          description: User not found
+          schema:
+            type: string
+      security:
+      - ApiKeyAuth: []
+      - BearerAuth: []
+      summary: Update user profile
+      tags:
+      - user
   /register:
     post:
       consumes:
       - application/json
-      description: Registers a new user with the given username and password
+      description: Registers a new user with the given email and password
       parameters:
       - description: User registration object
         in: body
         name: user
         required: true
         schema:
-          $ref: '#/definitions/models.LoginUser'
+          $ref: '#/definitions/models.RegisterUser'
       produces:
       - application/json
       responses:
@@ -301,7 +506,8 @@ paths:
       - user
   /users:
     get:
-      description: Get a list of all users with optional pagination
+      description: Get a list of all users with optional pagination (excludes deleted
+        users)
       parameters:
       - default: 0
         description: Offset for pagination
@@ -320,7 +526,7 @@ paths:
           description: Successfully retrieved list of users
           schema:
             items:
-              $ref: '#/definitions/models.User'
+              $ref: '#/definitions/models.UserResponse'
             type: array
       security:
       - ApiKeyAuth: []

@@ -51,9 +51,18 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 		v1.PUT("/books/:id", middleware.APIKeyAuth(), bookRepository.UpdateBook)
 		v1.DELETE("/books/:id", middleware.APIKeyAuth(), bookRepository.DeleteBook)
 
+		// 用户管理路由
 		v1.GET("/users", middleware.APIKeyAuth(), userRepository.FindUsers)
+
+		// 认证路由
 		v1.POST("/login", middleware.APIKeyAuth(), userRepository.LoginHandler)
 		v1.POST("/register", middleware.APIKeyAuth(), userRepository.RegisterHandler)
+		v1.POST("/auth/third-party", middleware.APIKeyAuth(), userRepository.ThirdPartyLoginHandler)
+
+		// 用户个人资料路由（需要JWT认证）
+		v1.GET("/profile", middleware.APIKeyAuth(), middleware.JWTAuth(), userRepository.GetUserProfile)
+		v1.PUT("/profile", middleware.APIKeyAuth(), middleware.JWTAuth(), userRepository.UpdateUserProfile)
+		v1.DELETE("/profile", middleware.APIKeyAuth(), middleware.JWTAuth(), userRepository.SoftDeleteUser)
 	}
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
 

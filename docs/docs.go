@@ -47,6 +47,58 @@ const docTemplate = `{
                 }
             }
         },
+        "/auth/third-party": {
+            "post": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "description": "Authenticates or registers a user using third-party providers",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Third-party login (Apple ID, Google, etc.)",
+                "parameters": [
+                    {
+                        "description": "Third-party login object",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.ThirdPartyLoginUser"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "JWT Token and user info",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/books": {
             "get": {
                 "security": [
@@ -284,7 +336,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Authenticates a user using username and password, returns a JWT token if successful",
+                "description": "Authenticates a user using email and password, returns a JWT token if successful",
                 "consumes": [
                     "application/json"
                 ],
@@ -334,6 +386,142 @@ const docTemplate = `{
                 }
             }
         },
+        "/profile": {
+            "get": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Get the profile of the authenticated user",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Get user profile",
+                "responses": {
+                    "200": {
+                        "description": "User profile",
+                        "schema": {
+                            "$ref": "#/definitions/models.UserResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Update the profile of the authenticated user",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Update user profile",
+                "parameters": [
+                    {
+                        "description": "User update object",
+                        "name": "user",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/models.UpdateUser"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Updated user profile",
+                        "schema": {
+                            "$ref": "#/definitions/models.UserResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    },
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Soft delete the authenticated user's account (sets deleted_at timestamp)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "user"
+                ],
+                "summary": "Soft delete user account",
+                "responses": {
+                    "200": {
+                        "description": "Account deleted successfully",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "type": "string"
+                        }
+                    },
+                    "404": {
+                        "description": "User not found",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/register": {
             "post": {
                 "security": [
@@ -341,7 +529,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Registers a new user with the given username and password",
+                "description": "Registers a new user with the given email and password",
                 "consumes": [
                     "application/json"
                 ],
@@ -359,7 +547,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/models.LoginUser"
+                            "$ref": "#/definitions/models.RegisterUser"
                         }
                     }
                 ],
@@ -392,7 +580,7 @@ const docTemplate = `{
                         "ApiKeyAuth": []
                     }
                 ],
-                "description": "Get a list of all users with optional pagination",
+                "description": "Get a list of all users with optional pagination (excludes deleted users)",
                 "produces": [
                     "application/json"
                 ],
@@ -422,7 +610,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/models.User"
+                                "$ref": "#/definitions/models.UserResponse"
                             }
                         }
                     }
@@ -431,6 +619,25 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "models.AuthProviderEnum": {
+            "type": "string",
+            "enum": [
+                "email",
+                "apple_id",
+                "google",
+                "facebook",
+                "github",
+                "wechat"
+            ],
+            "x-enum-varnames": [
+                "AuthProviderEmail",
+                "AuthProviderAppleID",
+                "AuthProviderGoogle",
+                "AuthProviderFacebook",
+                "AuthProviderGithub",
+                "AuthProviderWechat"
+            ]
+        },
         "models.Book": {
             "type": "object",
             "properties": {
@@ -469,14 +676,86 @@ const docTemplate = `{
         "models.LoginUser": {
             "type": "object",
             "required": [
-                "password",
-                "username"
+                "email",
+                "password"
             ],
             "properties": {
-                "password": {
+                "email": {
                     "type": "string"
                 },
-                "username": {
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
+        "models.PlatformEnum": {
+            "type": "string",
+            "enum": [
+                "web",
+                "mobile",
+                "app"
+            ],
+            "x-enum-varnames": [
+                "PlatformWeb",
+                "PlatformMobile",
+                "PlatformApp"
+            ]
+        },
+        "models.RegisterUser": {
+            "type": "object",
+            "required": [
+                "email",
+                "full_name",
+                "password"
+            ],
+            "properties": {
+                "auth_provider": {
+                    "$ref": "#/definitions/models.AuthProviderEnum"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "password": {
+                    "type": "string",
+                    "minLength": 6
+                },
+                "platform": {
+                    "$ref": "#/definitions/models.PlatformEnum"
+                }
+            }
+        },
+        "models.ThirdPartyLoginUser": {
+            "type": "object",
+            "required": [
+                "auth_provider",
+                "email",
+                "platform",
+                "provider_user_id"
+            ],
+            "properties": {
+                "auth_provider": {
+                    "$ref": "#/definitions/models.AuthProviderEnum"
+                },
+                "avatar_url": {
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "platform": {
+                    "$ref": "#/definitions/models.PlatformEnum"
+                },
+                "provider_token": {
+                    "description": "第三方平台的访问令牌，用于验证",
+                    "type": "string"
+                },
+                "provider_user_id": {
                     "type": "string"
                 }
             }
@@ -492,22 +771,55 @@ const docTemplate = `{
                 }
             }
         },
-        "models.User": {
+        "models.UpdateUser": {
             "type": "object",
             "properties": {
+                "avatar_url": {
+                    "type": "string"
+                },
+                "full_name": {
+                    "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "models.UserResponse": {
+            "type": "object",
+            "properties": {
+                "auth_provider": {
+                    "$ref": "#/definitions/models.AuthProviderEnum"
+                },
+                "avatar_url": {
+                    "type": "string"
+                },
                 "created_at": {
+                    "description": "时间字段统一放在一起",
+                    "type": "string"
+                },
+                "email": {
+                    "type": "string"
+                },
+                "full_name": {
                     "type": "string"
                 },
                 "id": {
-                    "type": "integer"
-                },
-                "password": {
                     "type": "string"
+                },
+                "is_active": {
+                    "type": "boolean"
+                },
+                "is_superuser": {
+                    "type": "boolean"
+                },
+                "last_login": {
+                    "type": "string"
+                },
+                "platform": {
+                    "$ref": "#/definitions/models.PlatformEnum"
                 },
                 "updated_at": {
-                    "type": "string"
-                },
-                "username": {
                     "type": "string"
                 }
             }
