@@ -31,12 +31,8 @@ func JWTAuth() gin.HandlerFunc {
 			return auth.JwtKey, nil
 		})
 
-		println("error:", err.Error())
-		println("tokenStr:", tokenStr)
-
 		if err != nil {
-			//response.Unauthorized(c, "Invalid token")
-			response.Unauthorized(c, err.Error())
+			response.Unauthorized(c, "Invalid token")
 			c.Abort()
 			return
 		}
