@@ -3,6 +3,7 @@ package auth
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"fmt"
 	"os"
 	"strconv"
 	"time"
@@ -58,9 +59,51 @@ func GetDummyHash() string {
 	}
 }
 
+// getJWTExpiryDuration 获取JWT token有效期配置
+func getJWTExpiryDuration() time.Duration {
+	durationStr := os.Getenv("JWT_EXPIRY_DURATION")
+	if durationStr == "" {
+		return 24 * time.Hour // 默认24小时
+	}
+
+	duration, err := parseDuration(durationStr)
+	if err != nil {
+		// 如果解析失败，使用默认值24小时
+		return 24 * time.Hour
+	}
+
+	// 限制最小值为5分钟，最大值为7天
+	if duration < 5*time.Minute {
+		return 5 * time.Minute
+	}
+	if duration > 7*24*time.Hour {
+		return 7 * 24 * time.Hour
+	}
+
+	return duration
+}
+
+// parseDuration 解析时间字符串，支持更多格式
+func parseDuration(s string) (time.Duration, error) {
+	// 先尝试标准的time.ParseDuration
+	if duration, err := time.ParseDuration(s); err == nil {
+		return duration, nil
+	}
+
+	// 支持天数格式 (如 "1d", "7d")
+	if len(s) >= 2 && s[len(s)-1] == 'd' {
+		if days, err := strconv.Atoi(s[:len(s)-1]); err == nil {
+			return time.Duration(days) * 24 * time.Hour, nil
+		}
+	}
+
+	return 0, fmt.Errorf("invalid duration format: %s", s)
+}
+
 func GenerateToken(username string) (string, error) {
-	// The expiration time after which the token will be invalid.
-	expirationTime := time.Now().Add(5 * time.Minute).Unix()
+	// 获取可配置的过期时间
+	expiryDuration := getJWTExpiryDuration()
+	expirationTime := time.Now().Add(expiryDuration).Unix()
 
 	// Create the JWT claims, which includes the username and expiration time
 	claims := &jwt.StandardClaims{

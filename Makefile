@@ -145,10 +145,31 @@ debug-jwt:
 		go run scripts/debug_jwt_token.go $(TOKEN); \
 	fi
 
+# JWT有效期测试
+test-jwt-expiry:
+	@echo "⏰ JWT Token 有效期测试..."
+	@go run scripts/test_jwt_expiry.go
+
+# JWT有效期测试（带token解析）
+test-jwt-expiry-with-token:
+	@echo "⏰ JWT Token 有效期测试（带token解析）..."
+	@echo "用法: make test-jwt-expiry-with-token TOKEN=<your_jwt_token>"
+	@if [ -z "$(TOKEN)" ]; then \
+		echo "请提供JWT token: make test-jwt-expiry-with-token TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; \
+		go run scripts/test_jwt_expiry.go; \
+	else \
+		go run scripts/test_jwt_expiry.go $(TOKEN); \
+	fi
+
 # 测试个人资料接口
 test-profile:
 	@echo "👤 测试个人资料接口..."
 	@go run scripts/test_profile_api.go
+
+# 测试书籍API
+test-books:
+	@echo "📚 测试书籍API..."
+	@go run scripts/test_books_api.go
 
 # 完整的API测试流程
 test-api-flow:
@@ -157,6 +178,8 @@ test-api-flow:
 	@make test-login
 	@echo "\n2. 测试个人资料接口..."
 	@make test-profile
+	@echo "\n3. 测试书籍API..."
+	@make test-books
 	@echo "\n✅ API测试流程完成"
 
 # 数据库索引优化

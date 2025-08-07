@@ -200,6 +200,9 @@ func (r *userRepository) handleSuccessfulLogin(c *gin.Context, dbUser *models.Us
 		return
 	}
 
+	// 调试信息：显示token有效期
+	fmt.Printf("Debug - Generated JWT token for user: %s, token length: %d\n", dbUser.Email, len(token))
+
 	// 异步更新最后登录时间，避免阻塞响应
 	go r.updateLastLoginAsync(dbUser.ID, fromCache)
 
