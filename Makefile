@@ -93,6 +93,51 @@ test-config:
 	@echo "Testing MongoDB configuration parsing..."
 	@./scripts/test_mongo_config.sh
 
+# 性能测试
+test-performance:
+	@echo "🚀 Running login API performance test..."
+	@go run scripts/performance_test.go
+
+# 简单登录测试
+test-login:
+	@echo "🔐 Running simple login test..."
+	@go run scripts/simple_login_test.go
+
+# 登录性能测试
+test-login-performance:
+	@echo "⚡ Running login performance test..."
+	@go run scripts/login_performance_test.go
+
+# bcrypt性能测试
+test-bcrypt:
+	@echo "🔐 Running bcrypt benchmark..."
+	@go run scripts/bcrypt_benchmark.go
+
+# JWT性能测试
+test-jwt:
+	@echo "🎫 Running JWT benchmark..."
+	@go run scripts/jwt_benchmark.go
+
+# 数据库索引优化
+db-optimize:
+	@echo "📊 Adding performance indexes to database..."
+	@if [ -z "$(DB_URL)" ]; then \
+		echo "Please set DB_URL environment variable"; \
+		echo "Example: make db-optimize DB_URL='postgres://user:pass@localhost:5432/dbname'"; \
+		exit 1; \
+	fi
+	@psql $(DB_URL) -f scripts/add_performance_indexes.sql
+
+# 数据库性能分析
+db-analyze:
+	@echo "📈 Analyzing database performance..."
+	@if [ -z "$(DB_URL)" ]; then \
+		echo "Please set DB_URL environment variable"; \
+		exit 1; \
+	fi
+	@psql $(DB_URL) -c "ANALYZE users;"
+	@echo "✅ Database analysis complete"
+
 clean:
 	docker stop go-rest-api-template
 	docker stop dockerPostgres

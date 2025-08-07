@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/golang-jwt/jwt"
@@ -18,9 +19,43 @@ type Claims struct {
 
 var JwtKey = []byte(os.Getenv("JWT_SECRET_KEY"))
 
+// getBcryptCost 获取bcrypt cost配置，默认为12
+func getBcryptCost() int {
+	costStr := os.Getenv("BCRYPT_COST")
+	if costStr == "" {
+		return 12 // 默认cost，平衡安全性和性能
+	}
+
+	cost, err := strconv.Atoi(costStr)
+	if err != nil || cost < 4 || cost > 15 {
+		return 12 // 无效值时使用默认值
+	}
+
+	return cost
+}
+
 func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
+	cost := getBcryptCost()
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), cost)
 	return string(bytes), err
+}
+
+// GetDummyHash 获取用于防时序攻击的dummy hash
+func GetDummyHash() string {
+	cost := getBcryptCost()
+	// 生成一个与当前cost匹配的dummy hash
+	switch cost {
+	case 10:
+		return "$2a$10$dummy.hash.to.prevent.timing.attacks.abcdefghijklmnopqrstuvwxyz"
+	case 11:
+		return "$2a$11$dummy.hash.to.prevent.timing.attacks.abcdefghijklmnopqrstuvwxyz"
+	case 12:
+		return "$2a$12$dummy.hash.to.prevent.timing.attacks.abcdefghijklmnopqrstuvwxyz"
+	case 13:
+		return "$2a$13$dummy.hash.to.prevent.timing.attacks.abcdefghijklmnopqrstuvwxyz"
+	default:
+		return "$2a$12$dummy.hash.to.prevent.timing.attacks.abcdefghijklmnopqrstuvwxyz"
+	}
 }
 
 func GenerateToken(username string) (string, error) {

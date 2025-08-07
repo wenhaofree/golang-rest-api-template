@@ -16,6 +16,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -61,62 +62,161 @@ func NewUserRepository(db database.Database, redisClient cache.Cache, ctx *conte
 // @Failure 500 {string} string "Internal Server Error"
 // @Router /login [post]
 func (r *userRepository) LoginHandler(c *gin.Context) {
-	var loginUser models.LoginUser
-	var dbUser models.User
+	startTime := time.Now()
+	var loginUser models.User
 
-	// Get JSON body
-	if err := c.ShouldBindJSON(&loginUser); err != nil {
-		response.BadRequest(c, "Bad Request")
+	// 1. JSON解析阶段
+	parseStart := time.Now()
+	var loginRequest models.LoginUser
+	if err := c.ShouldBindJSON(&loginRequest); err != nil {
+		fmt.Printf("JSON parsing took: %v\n", time.Since(parseStart))
+		response.BadRequest(c, "Invalid request format")
+		return
+	}
+	fmt.Printf("JSON parsing took: %v\n", time.Since(parseStart))
+
+	// 基本输入验证
+	if loginRequest.Email == "" || loginRequest.Password == "" {
+		response.BadRequest(c, "Email and password are required")
 		return
 	}
 
-	// Fetch the user from the database (check for non-deleted users)
-	if err := r.DB.Where("email = ? AND deleted_at IS NULL", loginUser.Email).First(&dbUser).Error(); err != nil {
+	// 2. 缓存查询阶段
+	cacheStart := time.Now()
+	cacheKey := fmt.Sprintf("user_login:%s", loginRequest.Email)
+	cachedUser, cacheErr := r.RedisClient.Get(*r.Ctx, cacheKey).Result()
+	fmt.Printf("Cache lookup took: %v\n", time.Since(cacheStart))
+
+	if cacheErr == nil {
+		// 缓存命中，反序列化用户数据
+		deserializeStart := time.Now()
+		if err := json.Unmarshal([]byte(cachedUser), &loginUser); err == nil {
+			fmt.Printf("Cache deserialization took: %v\n", time.Since(deserializeStart))
+
+			// 验证缓存的用户数据是否仍然有效
+			validateStart := time.Now()
+			if r.validateCachedUser(&loginUser, &loginRequest) {
+				fmt.Printf("Cache validation took: %v\n", time.Since(validateStart))
+				fmt.Printf("Total login (cache hit) took: %v\n", time.Since(startTime))
+				r.handleSuccessfulLogin(c, &loginUser, true) // true表示来自缓存
+				return
+			}
+			fmt.Printf("Cache validation took: %v\n", time.Since(validateStart))
+		}
+		// 缓存数据无效，删除缓存
+		r.RedisClient.Del(*r.Ctx, cacheKey)
+	}
+
+	// 3. 数据库查询阶段
+	dbStart := time.Now()
+	if err := r.DB.Where("email = ? AND deleted_at IS NULL AND is_active = ?", loginRequest.Email, true).
+		First(&loginUser).Error(); err != nil {
+		fmt.Printf("Database query took: %v\n", time.Since(dbStart))
+
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// 4. 防时序攻击阶段
+			timingStart := time.Now()
+			bcrypt.CompareHashAndPassword([]byte(auth.GetDummyHash()), []byte(loginRequest.Password))
+			fmt.Printf("Timing attack prevention took: %v\n", time.Since(timingStart))
+			fmt.Printf("Total login (user not found) took: %v\n", time.Since(startTime))
 			response.Unauthorized(c, "Invalid email or password")
 		} else {
-			response.InternalServerError(c, "Internal Server Error")
+			fmt.Printf("Total login (db error) took: %v\n", time.Since(startTime))
+			response.InternalServerError(c, "Authentication service temporarily unavailable")
 		}
 		return
 	}
+	fmt.Printf("Database query took: %v\n", time.Since(dbStart))
 
-	// Check if user is active
-	if !dbUser.IsActive {
-		response.Unauthorized(c, "Account is deactivated")
-		return
-	}
+	// 5. 密码验证阶段
+	validateStart := time.Now()
+	if r.validateUserCredentials(&loginUser, &loginRequest) {
+		fmt.Printf("Password validation took: %v\n", time.Since(validateStart))
 
-	// Verify password (only for email auth provider)
-	if dbUser.AuthProvider == models.AuthProviderEmail {
-		if dbUser.HashedPassword == nil {
-			response.Unauthorized(c, "Invalid email or password")
-			return
+		// 6. 缓存更新阶段
+		cacheUpdateStart := time.Now()
+		if userBytes, err := json.Marshal(loginUser); err == nil {
+			r.RedisClient.Set(*r.Ctx, cacheKey, userBytes, 5*time.Minute)
 		}
-		if err := bcrypt.CompareHashAndPassword([]byte(*dbUser.HashedPassword), []byte(loginUser.Password)); err != nil {
-			response.Unauthorized(c, "Invalid email or password")
-			return
-		}
+		fmt.Printf("Cache update took: %v\n", time.Since(cacheUpdateStart))
+
+		fmt.Printf("Total login (success) took: %v\n", time.Since(startTime))
+		r.handleSuccessfulLogin(c, &loginUser, false) // false表示来自数据库
 	} else {
-		response.BadRequest(c, "Please use third-party login for this account")
-		return
+		fmt.Printf("Password validation took: %v\n", time.Since(validateStart))
+		fmt.Printf("Total login (invalid password) took: %v\n", time.Since(startTime))
+		response.Unauthorized(c, "Invalid email or password")
+	}
+}
+
+// validateCachedUser 验证缓存的用户数据
+func (r *userRepository) validateCachedUser(dbUser *models.User, loginUser *models.LoginUser) bool {
+	// 检查用户是否仍然激活且未被删除
+	if !dbUser.IsActive || dbUser.IsDeleted() {
+		return false
 	}
 
-	// Update last login time
-	now := time.Now()
-	dbUser.LastLogin = &now
-	r.DB.Model(&dbUser).Updates(models.User{LastLogin: &now})
+	// 验证认证提供商
+	if dbUser.AuthProvider != models.AuthProviderEmail {
+		return false
+	}
 
-	// Generate JWT token
+	// 验证密码
+	if dbUser.HashedPassword == nil {
+		return false
+	}
+
+	return bcrypt.CompareHashAndPassword([]byte(*dbUser.HashedPassword), []byte(loginUser.Password)) == nil
+}
+
+// validateUserCredentials 验证用户凭据
+func (r *userRepository) validateUserCredentials(dbUser *models.User, loginUser *models.LoginUser) bool {
+	// 验证认证提供商
+	if dbUser.AuthProvider != models.AuthProviderEmail {
+		return false
+	}
+
+	// 验证密码
+	if dbUser.HashedPassword == nil {
+		return false
+	}
+
+	return bcrypt.CompareHashAndPassword([]byte(*dbUser.HashedPassword), []byte(loginUser.Password)) == nil
+}
+
+// handleSuccessfulLogin 处理成功登录的逻辑
+func (r *userRepository) handleSuccessfulLogin(c *gin.Context, dbUser *models.User, fromCache bool) {
+	// 生成JWT token（这个操作比较快）
 	token, err := auth.GenerateToken(dbUser.Email)
 	if err != nil {
-		response.InternalServerError(c, "Error generating token")
+		response.InternalServerError(c, "Authentication service error")
 		return
 	}
 
+	// 异步更新最后登录时间，避免阻塞响应
+	go r.updateLastLoginAsync(dbUser.ID, fromCache)
+
+	// 立即返回响应
 	response.Success(c, gin.H{
 		"token": token,
 		"user":  dbUser.ToResponse(),
 	})
+}
+
+// updateLastLoginAsync 异步更新最后登录时间
+func (r *userRepository) updateLastLoginAsync(userID interface{}, fromCache bool) {
+	now := time.Now()
+
+	// 如果是从缓存获取的用户，检查是否需要更新（避免频繁更新）
+	if fromCache {
+		// 可以添加更智能的更新策略，比如只有距离上次登录超过一定时间才更新
+		// 这里简化处理，每次都更新
+	}
+
+	// 只更新last_login字段，减少数据库负载
+	if db, ok := r.DB.(*database.GormDatabase); ok {
+		db.Model(&models.User{}).Where("id = ?", userID).Update("last_login", now)
+	}
 }
 
 // RegisterHandler godoc
@@ -197,60 +297,62 @@ func (r *userRepository) RegisterHandler(c *gin.Context) {
 // @Success 200 {array} models.UserResponse "Successfully retrieved list of users"
 // @Router /users [get]
 func (r *userRepository) FindUsers(c *gin.Context) {
-	var users []models.User
-	var userResponses []models.UserResponse
-
-	// Get query params
+	// Get and validate query params
 	offsetQuery := c.DefaultQuery("offset", "0")
 	limitQuery := c.DefaultQuery("limit", "10")
 
-	// Convert query params to integers
 	offset, err := strconv.Atoi(offsetQuery)
-	if err != nil {
+	if err != nil || offset < 0 {
 		response.BadRequest(c, "Invalid offset format")
 		return
 	}
 
 	limit, err := strconv.Atoi(limitQuery)
-	if err != nil {
-		response.BadRequest(c, "Invalid limit format")
+	if err != nil || limit <= 0 || limit > 100 { // 限制最大查询数量
+		response.BadRequest(c, "Invalid limit format (max 100)")
 		return
 	}
 
 	// Create a cache key based on query params
-	cacheKey := "users_offset_" + offsetQuery + "_limit_" + limitQuery
+	cacheKey := fmt.Sprintf("users:offset:%d:limit:%d", offset, limit)
 
-	// Try fetching the data from Redis first
+	// Try fetching from cache first
+	var userResponses []models.UserResponse
 	cachedUsers, err := r.RedisClient.Get(*r.Ctx, cacheKey).Result()
 	if err == nil {
-		err := json.Unmarshal([]byte(cachedUsers), &userResponses)
-		if err != nil {
-			response.InternalServerError(c, "Failed to unmarshal cached data")
+		if err := json.Unmarshal([]byte(cachedUsers), &userResponses); err == nil {
+			response.Success(c, userResponses)
 			return
 		}
-		response.Success(c, userResponses)
+		// 缓存数据损坏，删除缓存
+		r.RedisClient.Del(*r.Ctx, cacheKey)
+	}
+
+	// Cache miss, fetch from database with optimized query
+	var users []models.User
+
+	// 使用数据库查询获取用户列表
+	if err := r.DB.Where("deleted_at IS NULL").
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&users).Error; err != nil {
+		response.InternalServerError(c, "Failed to fetch users")
 		return
 	}
 
-	// If cache missed, fetch data from the database (exclude deleted users)
-	r.DB.Where("deleted_at IS NULL").Offset(offset).Limit(limit).Find(&users)
-
 	// Convert to response format
+	userResponses = make([]models.UserResponse, 0, len(users))
 	for _, user := range users {
 		userResponses = append(userResponses, user.ToResponse())
 	}
 
-	// Serialize users object and store it in Redis
-	serializedUsers, err := json.Marshal(userResponses)
-	if err != nil {
-		response.InternalServerError(c, "Failed to marshal data")
-		return
-	}
-	err = r.RedisClient.Set(*r.Ctx, cacheKey, serializedUsers, time.Minute).Err()
-	if err != nil {
-		response.InternalServerError(c, "Failed to set cache")
-		return
-	}
+	// Cache the result asynchronously to avoid blocking the response
+	go func() {
+		if serializedUsers, err := json.Marshal(userResponses); err == nil {
+			r.RedisClient.Set(*r.Ctx, cacheKey, serializedUsers, 2*time.Minute)
+		}
+	}()
 
 	response.Success(c, userResponses)
 }
@@ -271,7 +373,13 @@ func (r *userRepository) ThirdPartyLoginHandler(c *gin.Context) {
 	var thirdPartyUser models.ThirdPartyLoginUser
 
 	if err := c.ShouldBindJSON(&thirdPartyUser); err != nil {
-		response.BadRequest(c, err.Error())
+		response.BadRequest(c, "Invalid request format")
+		return
+	}
+
+	// 基本输入验证
+	if thirdPartyUser.ProviderUserID == "" || thirdPartyUser.Email == "" {
+		response.BadRequest(c, "Provider user ID and email are required")
 		return
 	}
 
@@ -282,59 +390,80 @@ func (r *userRepository) ThirdPartyLoginHandler(c *gin.Context) {
 	//     return
 	// }
 
+	// 尝试从缓存获取用户信息
+	cacheKey := fmt.Sprintf("third_party_user:%s:%s", thirdPartyUser.AuthProvider, thirdPartyUser.ProviderUserID)
 	var dbUser models.User
 
-	// 尝试通过provider_user_id和auth_provider查找用户
-	err := r.DB.Where("provider_user_id = ? AND auth_provider = ? AND deleted_at IS NULL",
-		thirdPartyUser.ProviderUserID, thirdPartyUser.AuthProvider).First(&dbUser).Error()
+	cachedUser, err := r.RedisClient.Get(*r.Ctx, cacheKey).Result()
+	if err == nil {
+		if err := json.Unmarshal([]byte(cachedUser), &dbUser); err == nil && dbUser.IsActive && !dbUser.IsDeleted() {
+			// 缓存命中且用户有效
+			r.handleSuccessfulLogin(c, &dbUser, true)
+			return
+		}
+		// 缓存数据无效，删除缓存
+		r.RedisClient.Del(*r.Ctx, cacheKey)
+	}
+
+	// 缓存未命中，从数据库查询
+	// 优化查询：添加复合索引查询条件
+	err = r.DB.Where("provider_user_id = ? AND auth_provider = ? AND deleted_at IS NULL AND is_active = ?",
+		thirdPartyUser.ProviderUserID, thirdPartyUser.AuthProvider, true).First(&dbUser).Error()
 
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// 用户不存在，创建新用户
-			newUser := models.User{
-				Email:          thirdPartyUser.Email,
-				FullName:       &thirdPartyUser.FullName,
-				Platform:       thirdPartyUser.Platform,
-				AuthProvider:   thirdPartyUser.AuthProvider,
-				ProviderUserID: &thirdPartyUser.ProviderUserID,
-				AvatarURL:      &thirdPartyUser.AvatarURL,
-				IsActive:       true,
-				IsSuperuser:    false,
-			}
-
-			if err := r.DB.Create(&newUser).Error; err != nil {
-				response.InternalServerError(c, fmt.Sprintf("Could not create user: %v", err))
+			dbUser = r.createThirdPartyUser(&thirdPartyUser)
+			if dbUser.ID == (uuid.UUID{}) { // 检查是否创建失败
+				response.InternalServerError(c, "Failed to create user account")
 				return
 			}
-			dbUser = newUser
 		} else {
-			response.InternalServerError(c, "Database error")
+			response.InternalServerError(c, "Authentication service temporarily unavailable")
 			return
 		}
 	}
 
-	// 检查用户是否激活
-	if !dbUser.IsActive {
-		response.Unauthorized(c, "Account is deactivated")
-		return
+	// 缓存用户信息
+	if userBytes, err := json.Marshal(dbUser); err == nil {
+		r.RedisClient.Set(*r.Ctx, cacheKey, userBytes, 10*time.Minute)
 	}
 
-	// 更新最后登录时间
-	now := time.Now()
-	dbUser.LastLogin = &now
-	r.DB.Model(&dbUser).Updates(models.User{LastLogin: &now})
+	r.handleSuccessfulLogin(c, &dbUser, false)
+}
 
-	// 生成JWT token
-	token, err := auth.GenerateToken(dbUser.Email)
-	if err != nil {
-		response.InternalServerError(c, "Error generating token")
-		return
+// createThirdPartyUser 创建第三方登录用户
+func (r *userRepository) createThirdPartyUser(thirdPartyUser *models.ThirdPartyLoginUser) models.User {
+	newUser := models.User{
+		Email:          thirdPartyUser.Email,
+		FullName:       &thirdPartyUser.FullName,
+		Platform:       thirdPartyUser.Platform,
+		AuthProvider:   thirdPartyUser.AuthProvider,
+		ProviderUserID: &thirdPartyUser.ProviderUserID,
+		AvatarURL:      &thirdPartyUser.AvatarURL,
+		IsActive:       true,
+		IsSuperuser:    false,
 	}
 
-	response.Success(c, gin.H{
-		"token": token,
-		"user":  dbUser.ToResponse(),
-	})
+	if err := r.DB.Create(&newUser).Error; err != nil {
+		// 可能是邮箱冲突，尝试通过邮箱查找现有用户
+		var existingUser models.User
+		if err := r.DB.Where("email = ? AND deleted_at IS NULL", thirdPartyUser.Email).First(&existingUser).Error(); err == nil {
+			// 更新现有用户的第三方登录信息
+			updateData := models.User{
+				ProviderUserID: &thirdPartyUser.ProviderUserID,
+				AuthProvider:   thirdPartyUser.AuthProvider,
+			}
+			if thirdPartyUser.AvatarURL != "" {
+				updateData.AvatarURL = &thirdPartyUser.AvatarURL
+			}
+			r.DB.Model(&existingUser).Updates(updateData)
+			return existingUser
+		}
+		return models.User{} // 返回空用户表示创建失败
+	}
+
+	return newUser
 }
 
 // GetUserProfile godoc

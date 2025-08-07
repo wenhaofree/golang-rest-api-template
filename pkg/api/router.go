@@ -44,6 +44,12 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 	r.Use(ContextMiddleware(bookRepository))
 	r.Use(MongoStatusMiddleware(mongoCollection)) // 设置MongoDB状态到上下文
 
+	// 性能监控中间件
+	r.Use(middleware.PerformanceMonitor(logger))
+
+	// 请求大小限制 (1MB)
+	r.Use(middleware.RequestSizeLimit(1 << 20))
+
 	//r.Use(gin.Logger())
 	r.Use(middleware.Logger(logger, mongoCollection)) // mongoCollection可能为nil，中间件会处理
 	if gin.Mode() == gin.ReleaseMode {
