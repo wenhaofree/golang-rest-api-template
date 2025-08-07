@@ -118,6 +118,23 @@ test-jwt:
 	@echo "🎫 Running JWT benchmark..."
 	@go run scripts/jwt_benchmark.go
 
+# 快速性能检查
+check-performance:
+	@echo "⚡ Quick performance check..."
+	@go run scripts/quick_performance_check.go
+
+# 完整性能测试套件
+test-all-performance:
+	@echo "🚀 Running complete performance test suite..."
+	@echo "1. Checking bcrypt performance..."
+	@go run scripts/bcrypt_benchmark.go
+	@echo "\n2. Checking JWT performance..."
+	@go run scripts/jwt_benchmark.go
+	@echo "\n3. Running login performance test..."
+	@go run scripts/login_performance_test.go
+	@echo "\n4. Quick performance summary..."
+	@go run scripts/quick_performance_check.go
+
 # 数据库索引优化
 db-optimize:
 	@echo "📊 Adding performance indexes to database..."

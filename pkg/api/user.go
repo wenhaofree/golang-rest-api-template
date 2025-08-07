@@ -81,10 +81,15 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 		return
 	}
 
-	// 2. 缓存查询阶段
+	// 2. 缓存查询阶段 - 优化版本
 	cacheStart := time.Now()
 	cacheKey := fmt.Sprintf("user_login:%s", loginRequest.Email)
-	cachedUser, cacheErr := r.RedisClient.Get(*r.Ctx, cacheKey).Result()
+
+	// 使用异步缓存查询，设置超时
+	ctx, cancel := context.WithTimeout(*r.Ctx, 10*time.Millisecond)
+	defer cancel()
+
+	cachedUser, cacheErr := r.RedisClient.Get(ctx, cacheKey).Result()
 	fmt.Printf("Cache lookup took: %v\n", time.Since(cacheStart))
 
 	if cacheErr == nil {
@@ -103,8 +108,8 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 			}
 			fmt.Printf("Cache validation took: %v\n", time.Since(validateStart))
 		}
-		// 缓存数据无效，删除缓存
-		r.RedisClient.Del(*r.Ctx, cacheKey)
+		// 缓存数据无效，异步删除缓存避免阻塞
+		go r.RedisClient.Del(*r.Ctx, cacheKey)
 	}
 
 	// 3. 数据库查询阶段
@@ -133,11 +138,13 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 	if r.validateUserCredentials(&loginUser, &loginRequest) {
 		fmt.Printf("Password validation took: %v\n", time.Since(validateStart))
 
-		// 6. 缓存更新阶段
+		// 6. 缓存更新阶段 - 异步优化
 		cacheUpdateStart := time.Now()
-		if userBytes, err := json.Marshal(loginUser); err == nil {
-			r.RedisClient.Set(*r.Ctx, cacheKey, userBytes, 5*time.Minute)
-		}
+		go func() {
+			if userBytes, err := json.Marshal(loginUser); err == nil {
+				r.RedisClient.Set(*r.Ctx, cacheKey, userBytes, 5*time.Minute)
+			}
+		}()
 		fmt.Printf("Cache update took: %v\n", time.Since(cacheUpdateStart))
 
 		fmt.Printf("Total login (success) took: %v\n", time.Since(startTime))
