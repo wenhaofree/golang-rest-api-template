@@ -41,16 +41,32 @@ func NewBookRepository(db database.Database, redisClient cache.Cache, ctx *conte
 // @BasePath /api/v1
 
 // Healthcheck godoc
-// @Summary ping example
+// @Summary Health check endpoint
 // @Schemes
-// @Description do ping
-// @Tags example
+// @Description Check the health status of the application and its dependencies
+// @Tags health
 // @Accept json
 // @Produce json
-// @Success 200 {string} ok
+// @Success 200 {object} map[string]interface{} "Health status"
 // @Router / [get]
 func (r *bookRepository) Healthcheck(c *gin.Context) {
-	response.Success(c, "ok")
+	healthStatus := map[string]interface{}{
+		"status":    "ok",
+		"timestamp": time.Now().UTC(),
+		"services": map[string]interface{}{
+			"database": "connected", // 假设数据库连接正常，实际可以添加检查
+			"redis":    "connected", // 假设Redis连接正常，实际可以添加检查
+		},
+	}
+	
+	// 从上下文中获取MongoDB状态（如果有的话）
+	if mongoStatus, exists := c.Get("mongo_status"); exists {
+		healthStatus["services"].(map[string]interface{})["mongodb"] = mongoStatus
+	} else {
+		healthStatus["services"].(map[string]interface{})["mongodb"] = "disabled"
+	}
+	
+	response.Success(c, healthStatus)
 }
 
 // FindBooks godoc

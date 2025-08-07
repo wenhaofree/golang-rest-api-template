@@ -25,15 +25,27 @@ func ContextMiddleware(bookRepository BookRepository) gin.HandlerFunc {
 	}
 }
 
+func MongoStatusMiddleware(mongoCollection *mongo.Collection) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if mongoCollection != nil {
+			c.Set("mongo_status", "connected")
+		} else {
+			c.Set("mongo_status", "disabled")
+		}
+		c.Next()
+	}
+}
+
 func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db database.Database, redisClient cache.Cache, ctx *context.Context) *gin.Engine {
 	bookRepository := NewBookRepository(db, redisClient, ctx)
 	userRepository := NewUserRepository(db, redisClient, ctx)
 
 	r := gin.Default()
 	r.Use(ContextMiddleware(bookRepository))
+	r.Use(MongoStatusMiddleware(mongoCollection)) // 设置MongoDB状态到上下文
 
 	//r.Use(gin.Logger())
-	r.Use(middleware.Logger(logger, mongoCollection))
+	r.Use(middleware.Logger(logger, mongoCollection)) // mongoCollection可能为nil，中间件会处理
 	if gin.Mode() == gin.ReleaseMode {
 		r.Use(middleware.Security())
 		r.Use(middleware.Xss())

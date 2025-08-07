@@ -4,10 +4,12 @@ import (
 	"context"
 	"golang-rest-api-template/pkg/api"
 	"golang-rest-api-template/pkg/cache"
+	"golang-rest-api-template/pkg/config"
 	"golang-rest-api-template/pkg/database"
 	"log"
 
 	"go.uber.org/zap"
+	"go.mongodb.org/mongo-driver/mongo"
 
 	"github.com/gin-gonic/gin"
 )
@@ -38,10 +40,27 @@ import (
 // @externalDocs.description  OpenAPI
 // @externalDocs.url          https://swagger.io/resources/open-api/
 func main() {
+	// 加载配置
+	cfg := config.LoadConfig()
+	
+	// 初始化各种服务
 	redisClient := cache.NewRedisClient()
 	db := database.NewDatabase()
 	dbWrapper := &database.GormDatabase{DB: db}
-	mongo := database.SetupMongoDB()
+	
+	// 根据配置决定是否启用MongoDB
+	var mongoCollection *mongo.Collection
+	if cfg.MongoEnabled {
+		mongoCollection = database.SetupMongoDB(cfg)
+		if mongoCollection != nil {
+			log.Println("MongoDB logging enabled")
+		} else {
+			log.Println("MongoDB connection failed, logging will only use structured logger")
+		}
+	} else {
+		log.Println("MongoDB logging disabled by configuration")
+	}
+	
 	ctx := context.Background()
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
@@ -49,8 +68,11 @@ func main() {
 	//gin.SetMode(gin.ReleaseMode)
 	gin.SetMode(gin.DebugMode)
 
-	r := api.NewRouter(logger, mongo, dbWrapper, redisClient, &ctx)
+	r := api.NewRouter(logger, mongoCollection, dbWrapper, redisClient, &ctx)
 
+	log.Printf("Server starting on port 8001...")
+	log.Printf("MongoDB logging enabled: %v", cfg.MongoEnabled)
+	
 	if err := r.Run(":8001"); err != nil {
 		log.Fatal(err)
 	}

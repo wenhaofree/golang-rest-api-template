@@ -16,8 +16,22 @@ bin/
  vendor/
 __pycache__
 .pytest_cache
+
+# Environment files - 包含敏感信息，不应提交到版本控制
 .env
+.env.local
+.env.*.local
+
+# Python virtual environments
 .venv
 env
 venv
+
+# IDE files
 .idea
+.vscode
+*.swp
+*.swo
+
+# Database data
+.dbdata/

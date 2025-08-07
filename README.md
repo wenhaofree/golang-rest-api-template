@@ -93,25 +93,73 @@ git clone https://github.com/araujo88/golang-rest-api-template
 cd golang-rest-api-template
 ```
 
-3. Build and run the Docker containers
+3. Set up environment configuration
 
+```bash
+# Copy the example environment file
+cp .env.example .env
+
+# Edit the configuration according to your environment
+vim .env
+```
+
+4. Build and run the application
+
+#### Option A: Using Docker (Recommended)
 ```bash
 make up
 ```
 
-Please refer to the [Makefile](./Makefile) if you need to build in the local environment.
+#### Option B: Using .env file (Local Development)
+```bash
+# Start with .env file configuration
+make run-env
+
+# Or use the startup script directly
+./scripts/start.sh
+```
+
+#### Option C: Environment-specific startup
+```bash
+# Development environment
+make run-dev
+
+# Production environment  
+make run-prod
+
+# Test environment
+make run-test
+```
+
+Please refer to the [Makefile](./Makefile) and [Environment Configuration Guide](docs/ENV_CONFIG.md) for more details.
 
 ### Environment Variables
 
 You can set the environment variables in the `.env` file. Here are some important variables:
 
+#### Database Configuration
 - `POSTGRES_HOST`
 - `POSTGRES_DB`
 - `POSTGRES_USER`
 - `POSTGRES_PASSWORD`
 - `POSTGRES_PORT`
-- `JWT_SECRET`
+
+#### Authentication
+- `JWT_SECRET_KEY`
 - `API_SECRET_KEY`
+
+#### MongoDB Configuration (Logging)
+- `MONGO_ENABLED` - Enable/disable MongoDB logging (default: `true`)
+- `MONGO_URI` - MongoDB connection URI (default: `mongodb://localhost:27017`)
+- `MONGO_DB` - MongoDB database name (default: `logging`)
+- `MONGO_LOG_COLLECTION` - Log collection name (default: `logs`)
+
+#### Redis Configuration
+- `REDIS_HOST`
+
+**Note**: 
+- MongoDB is used for storing API request logs. You can disable it by setting `MONGO_ENABLED=false` if you don't need persistent log storage. See [MongoDB Configuration Guide](docs/MONGODB_CONFIG.md) for detailed information.
+- The application supports `.env` file configuration for easy environment management. See [Environment Configuration Guide](docs/ENV_CONFIG.md) for detailed setup instructions.
 
 ### API Documentation
 
