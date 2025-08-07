@@ -492,16 +492,30 @@ func (r *userRepository) GetUserProfile(c *gin.Context) {
 		return
 	}
 
+	// 调试信息：检查获取到的email
+	fmt.Printf("Debug - JWT extracted email: '%s'\n", email)
+
+	// 类型断言确保email是字符串
+	emailStr, ok := email.(string)
+	if !ok || emailStr == "" {
+		fmt.Printf("Debug - Invalid email type or empty: %T, value: %v\n", email, email)
+		response.Unauthorized(c, "Invalid user information in token")
+		return
+	}
+
 	var user models.User
-	if err := r.DB.Where("email = ? AND deleted_at IS NULL", email).First(&user).Error(); err != nil {
+	if err := r.DB.Where("email = ? AND deleted_at IS NULL", emailStr).First(&user).Error(); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			fmt.Printf("Debug - User not found with email: '%s'\n", emailStr)
 			response.NotFound(c, "User not found")
 		} else {
+			fmt.Printf("Debug - Database error: %v\n", err)
 			response.InternalServerError(c, "Database error")
 		}
 		return
 	}
 
+	fmt.Printf("Debug - User found: ID=%s, Email=%s\n", user.ID, user.Email)
 	response.Success(c, user.ToResponse())
 }
 

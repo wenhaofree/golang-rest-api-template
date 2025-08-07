@@ -135,6 +135,30 @@ test-all-performance:
 	@echo "\n4. Quick performance summary..."
 	@go run scripts/quick_performance_check.go
 
+# JWT调试工具
+debug-jwt:
+	@echo "🔍 JWT Token 调试工具"
+	@echo "用法: make debug-jwt TOKEN=<your_jwt_token>"
+	@if [ -z "$(TOKEN)" ]; then \
+		echo "请提供JWT token: make debug-jwt TOKEN=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."; \
+	else \
+		go run scripts/debug_jwt_token.go $(TOKEN); \
+	fi
+
+# 测试个人资料接口
+test-profile:
+	@echo "👤 测试个人资料接口..."
+	@go run scripts/test_profile_api.go
+
+# 完整的API测试流程
+test-api-flow:
+	@echo "🚀 完整API测试流程..."
+	@echo "1. 测试登录接口..."
+	@make test-login
+	@echo "\n2. 测试个人资料接口..."
+	@make test-profile
+	@echo "\n✅ API测试流程完成"
+
 # 数据库索引优化
 db-optimize:
 	@echo "📊 Adding performance indexes to database..."

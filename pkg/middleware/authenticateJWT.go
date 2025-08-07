@@ -1,11 +1,12 @@
 package middleware
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/golang-jwt/jwt"
 	"golang-rest-api-template/pkg/auth"
 	"golang-rest-api-template/pkg/response"
 	"strings"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt"
 )
 
 func JWTAuth() gin.HandlerFunc {
@@ -25,9 +26,11 @@ func JWTAuth() gin.HandlerFunc {
 		}
 
 		tokenStr := header[len(BearerSchema):]
-		claims := &auth.Claims{}
 
-		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
+		// 使用StandardClaims来匹配token生成时的结构
+		claims := &jwt.StandardClaims{}
+
+		token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (any, error) {
 			return auth.JwtKey, nil
 		})
 
@@ -43,7 +46,14 @@ func JWTAuth() gin.HandlerFunc {
 			return
 		}
 
-		c.Set("username", claims.Username)
+		// 从Issuer字段获取email（与token生成时保持一致）
+		if claims.Issuer == "" {
+			response.Unauthorized(c, "Invalid token: missing user information")
+			c.Abort()
+			return
+		}
+
+		c.Set("username", claims.Issuer)
 		c.Next()
 	}
 }
