@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"time"
 
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 
 	"github.com/gin-gonic/gin"
@@ -68,12 +69,18 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 	// 1. JSON解析阶段
 	parseStart := time.Now()
 	var loginRequest models.LoginUser
+	lAny, _ := c.Get("logger")
+	logger, _ := lAny.(*zap.Logger)
 	if err := c.ShouldBindJSON(&loginRequest); err != nil {
-		fmt.Printf("JSON parsing took: %v\n", time.Since(parseStart))
+		if logger != nil {
+			logger.Debug("json parse", zap.Duration("elapsed", time.Since(parseStart)))
+		}
 		response.BadRequest(c, "Invalid request format")
 		return
 	}
-	fmt.Printf("JSON parsing took: %v\n", time.Since(parseStart))
+	if logger != nil {
+		logger.Debug("json parse", zap.Duration("elapsed", time.Since(parseStart)))
+	}
 
 	// 基本输入验证
 	if loginRequest.Email == "" || loginRequest.Password == "" {
@@ -90,23 +97,31 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 	defer cancel()
 
 	cachedUser, cacheErr := r.RedisClient.Get(ctx, cacheKey).Result()
-	fmt.Printf("Cache lookup took: %v\n", time.Since(cacheStart))
+	if logger != nil {
+		logger.Debug("cache lookup", zap.Duration("elapsed", time.Since(cacheStart)))
+	}
 
 	if cacheErr == nil {
 		// 缓存命中，反序列化用户数据
 		deserializeStart := time.Now()
 		if err := json.Unmarshal([]byte(cachedUser), &loginUser); err == nil {
-			fmt.Printf("Cache deserialization took: %v\n", time.Since(deserializeStart))
+			if logger != nil {
+				logger.Debug("cache deserialize", zap.Duration("elapsed", time.Since(deserializeStart)))
+			}
 
 			// 验证缓存的用户数据是否仍然有效
 			validateStart := time.Now()
 			if r.validateCachedUser(&loginUser, &loginRequest) {
-				fmt.Printf("Cache validation took: %v\n", time.Since(validateStart))
-				fmt.Printf("Total login (cache hit) took: %v\n", time.Since(startTime))
+				if logger != nil {
+					logger.Debug("cache validate", zap.Duration("elapsed", time.Since(validateStart)))
+					logger.Info("login success", zap.Bool("from_cache", true), zap.Duration("elapsed", time.Since(startTime)))
+				}
 				r.handleSuccessfulLogin(c, &loginUser, true) // true表示来自缓存
 				return
 			}
-			fmt.Printf("Cache validation took: %v\n", time.Since(validateStart))
+			if logger != nil {
+				logger.Debug("cache validate", zap.Duration("elapsed", time.Since(validateStart)))
+			}
 		}
 		// 缓存数据无效，异步删除缓存避免阻塞
 		go r.RedisClient.Del(*r.Ctx, cacheKey)
@@ -116,27 +131,39 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 	dbStart := time.Now()
 	if err := r.DB.Where("email = ? AND deleted_at IS NULL AND is_active = ?", loginRequest.Email, true).
 		First(&loginUser).Error(); err != nil {
-		fmt.Printf("Database query took: %v\n", time.Since(dbStart))
+		if logger != nil {
+			logger.Debug("db query", zap.Duration("elapsed", time.Since(dbStart)))
+		}
 
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			// 4. 防时序攻击阶段
 			timingStart := time.Now()
 			bcrypt.CompareHashAndPassword([]byte(auth.GetDummyHash()), []byte(loginRequest.Password))
-			fmt.Printf("Timing attack prevention took: %v\n", time.Since(timingStart))
-			fmt.Printf("Total login (user not found) took: %v\n", time.Since(startTime))
+			if logger != nil {
+				logger.Debug("timing prevention", zap.Duration("elapsed", time.Since(timingStart)))
+			}
+			if logger != nil {
+				logger.Warn("login fail - user not found", zap.Duration("elapsed", time.Since(startTime)), zap.String("email", loginRequest.Email))
+			}
 			response.Unauthorized(c, "Invalid email or password")
 		} else {
-			fmt.Printf("Total login (db error) took: %v\n", time.Since(startTime))
+			if logger != nil {
+				logger.Error("login error - db", zap.Duration("elapsed", time.Since(startTime)), zap.Error(err))
+			}
 			response.InternalServerError(c, "Authentication service temporarily unavailable")
 		}
 		return
 	}
-	fmt.Printf("Database query took: %v\n", time.Since(dbStart))
+	if logger != nil {
+		logger.Debug("db query", zap.Duration("elapsed", time.Since(dbStart)))
+	}
 
 	// 5. 密码验证阶段
 	validateStart := time.Now()
 	if r.validateUserCredentials(&loginUser, &loginRequest) {
-		fmt.Printf("Password validation took: %v\n", time.Since(validateStart))
+		if logger != nil {
+			logger.Debug("pwd validate", zap.Duration("elapsed", time.Since(validateStart)))
+		}
 
 		// 6. 缓存更新阶段 - 异步优化
 		cacheUpdateStart := time.Now()
@@ -145,13 +172,21 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 				r.RedisClient.Set(*r.Ctx, cacheKey, userBytes, 5*time.Minute)
 			}
 		}()
-		fmt.Printf("Cache update took: %v\n", time.Since(cacheUpdateStart))
+		if logger != nil {
+			logger.Debug("cache update", zap.Duration("elapsed", time.Since(cacheUpdateStart)))
+		}
 
-		fmt.Printf("Total login (success) took: %v\n", time.Since(startTime))
+		if logger != nil {
+			logger.Info("login success", zap.Bool("from_cache", false), zap.Duration("elapsed", time.Since(startTime)))
+		}
 		r.handleSuccessfulLogin(c, &loginUser, false) // false表示来自数据库
 	} else {
-		fmt.Printf("Password validation took: %v\n", time.Since(validateStart))
-		fmt.Printf("Total login (invalid password) took: %v\n", time.Since(startTime))
+		if logger != nil {
+			logger.Debug("pwd validate", zap.Duration("elapsed", time.Since(validateStart)))
+		}
+		if logger != nil {
+			logger.Warn("login fail - invalid password", zap.Duration("elapsed", time.Since(startTime)), zap.String("email", loginRequest.Email))
+		}
 		response.Unauthorized(c, "Invalid email or password")
 	}
 }
@@ -201,7 +236,11 @@ func (r *userRepository) handleSuccessfulLogin(c *gin.Context, dbUser *models.Us
 	}
 
 	// 调试信息：显示token有效期
-	fmt.Printf("Debug - Generated JWT token for user: %s, token length: %d\n", dbUser.Email, len(token))
+	lAny, _ := c.Get("logger")
+	logger, _ := lAny.(*zap.Logger)
+	if logger != nil {
+		logger.Debug("jwt generated", zap.String("email", dbUser.Email), zap.Int("token_len", len(token)))
+	}
 
 	// 异步更新最后登录时间，避免阻塞响应
 	go r.updateLastLoginAsync(dbUser.ID, fromCache)
@@ -496,12 +535,18 @@ func (r *userRepository) GetUserProfile(c *gin.Context) {
 	}
 
 	// 调试信息：检查获取到的email
-	fmt.Printf("Debug - JWT extracted email: '%s'\n", email)
+	lAny, _ := c.Get("logger")
+	logger, _ := lAny.(*zap.Logger)
+	if logger != nil {
+		logger.Debug("jwt extracted email", zap.Any("email", email))
+	}
 
 	// 类型断言确保email是字符串
 	emailStr, ok := email.(string)
 	if !ok || emailStr == "" {
-		fmt.Printf("Debug - Invalid email type or empty: %T, value: %v\n", email, email)
+		if logger != nil {
+			logger.Warn("invalid email in token", zap.Any("email_val", email))
+		}
 		response.Unauthorized(c, "Invalid user information in token")
 		return
 	}
@@ -509,16 +554,22 @@ func (r *userRepository) GetUserProfile(c *gin.Context) {
 	var user models.User
 	if err := r.DB.Where("email = ? AND deleted_at IS NULL", emailStr).First(&user).Error(); err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			fmt.Printf("Debug - User not found with email: '%s'\n", emailStr)
+			if logger != nil {
+				logger.Warn("user not found", zap.String("email", emailStr))
+			}
 			response.NotFound(c, "User not found")
 		} else {
-			fmt.Printf("Debug - Database error: %v\n", err)
+			if logger != nil {
+				logger.Error("db error", zap.Error(err))
+			}
 			response.InternalServerError(c, "Database error")
 		}
 		return
 	}
 
-	fmt.Printf("Debug - User found: ID=%s, Email=%s\n", user.ID, user.Email)
+	if logger != nil {
+		logger.Info("get profile success", zap.String("user_id", user.ID.String()), zap.String("email", user.Email))
+	}
 	response.Success(c, user.ToResponse())
 }
 

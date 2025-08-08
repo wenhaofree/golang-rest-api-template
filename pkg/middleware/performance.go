@@ -22,22 +22,21 @@ func PerformanceMonitor(logger *zap.Logger) gin.HandlerFunc {
 		status := c.Writer.Status()
 
 		// 记录性能指标
-		logger.Info("API Performance",
+		fields := []zap.Field{
 			zap.String("method", method),
 			zap.String("path", path),
 			zap.Int("status", status),
 			zap.Duration("duration", duration),
 			zap.String("ip", c.ClientIP()),
-		)
+		}
+		if reqID, ok := c.Get("request_id"); ok {
+			fields = append(fields, zap.String("request_id", reqID.(string)))
+		}
+		logger.Info("API Performance", fields...)
 
 		// 如果请求处理时间超过阈值，记录警告
 		if duration > 1*time.Second {
-			logger.Warn("Slow API Request",
-				zap.String("method", method),
-				zap.String("path", path),
-				zap.Duration("duration", duration),
-				zap.String("ip", c.ClientIP()),
-			)
+			logger.Warn("Slow API Request", fields...)
 		}
 
 		// 设置响应头，便于客户端监控

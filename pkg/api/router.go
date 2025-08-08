@@ -41,6 +41,8 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 	userRepository := NewUserRepository(db, redisClient, ctx)
 
 	r := gin.Default()
+	// 注入每请求 logger 与 request_id
+	r.Use(middleware.RequestContextLogger(logger))
 	r.Use(ContextMiddleware(bookRepository))
 	r.Use(MongoStatusMiddleware(mongoCollection)) // 设置MongoDB状态到上下文
 

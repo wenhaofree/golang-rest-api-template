@@ -6,9 +6,9 @@ import (
 	"golang-rest-api-template/pkg/cache"
 	"golang-rest-api-template/pkg/config"
 	"golang-rest-api-template/pkg/database"
+	"golang-rest-api-template/pkg/logging"
 	"log"
 
-	"go.uber.org/zap"
 	"go.mongodb.org/mongo-driver/mongo"
 
 	"github.com/gin-gonic/gin"
@@ -42,12 +42,12 @@ import (
 func main() {
 	// 加载配置
 	cfg := config.LoadConfig()
-	
+
 	// 初始化各种服务
 	redisClient := cache.NewRedisClient()
 	db := database.NewDatabase()
 	dbWrapper := &database.GormDatabase{DB: db}
-	
+
 	// 根据配置决定是否启用MongoDB
 	var mongoCollection *mongo.Collection
 	if cfg.MongoEnabled {
@@ -60,9 +60,12 @@ func main() {
 	} else {
 		log.Println("MongoDB logging disabled by configuration")
 	}
-	
+
 	ctx := context.Background()
-	logger, _ := zap.NewProduction()
+	logger, _, err := logging.NewLogger(cfg.LogLevel, gin.Mode() != gin.ReleaseMode)
+	if err != nil {
+		log.Fatalf("failed to init logger: %v", err)
+	}
 	defer logger.Sync()
 
 	//gin.SetMode(gin.ReleaseMode)
@@ -72,7 +75,7 @@ func main() {
 
 	log.Printf("Server starting on port 8001...")
 	log.Printf("MongoDB logging enabled: %v", cfg.MongoEnabled)
-	
+
 	if err := r.Run(":8001"); err != nil {
 		log.Fatal(err)
 	}

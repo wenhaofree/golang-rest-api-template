@@ -21,8 +21,8 @@ func Logger(logger *zap.Logger, collection *mongo.Collection) gin.HandlerFunc {
 		// End timer
 		duration := time.Since(start)
 
-		// Log the request details to structured logger
-		logger.Info("Request",
+		// Log the request details with level based on status code
+		fields := []zap.Field{
 			zap.String("method", c.Request.Method),
 			zap.String("path", c.Request.URL.Path),
 			zap.Int("status", c.Writer.Status()),
@@ -30,7 +30,19 @@ func Logger(logger *zap.Logger, collection *mongo.Collection) gin.HandlerFunc {
 			zap.String("ip", c.ClientIP()),
 			zap.String("user-agent", c.Request.UserAgent()),
 			zap.String("errors", c.Errors.ByType(gin.ErrorTypePrivate).String()),
-		)
+		}
+		if reqID, ok := c.Get("request_id"); ok {
+			fields = append(fields, zap.String("request_id", reqID.(string)))
+		}
+		status := c.Writer.Status()
+		switch {
+		case status >= 500:
+			logger.Error("Request", fields...)
+		case status >= 400:
+			logger.Warn("Request", fields...)
+		default:
+			logger.Info("Request", fields...)
+		}
 
 		// 只有当MongoDB collection不为nil时才记录到MongoDB
 		if collection != nil {
@@ -49,7 +61,7 @@ func Logger(logger *zap.Logger, collection *mongo.Collection) gin.HandlerFunc {
 			go func() {
 				ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 				defer cancel()
-				
+
 				if _, err := collection.InsertOne(ctx, logEntry); err != nil {
 					logger.Error("Failed to log to MongoDB", zap.Error(err))
 				}

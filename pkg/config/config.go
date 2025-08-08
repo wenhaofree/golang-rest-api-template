@@ -12,51 +12,57 @@ import (
 // Config 应用配置结构
 type Config struct {
 	// MongoDB配置
-	MongoEnabled bool   `json:"mongo_enabled"`
-	MongoURI     string `json:"mongo_uri"`
-	MongoDB      string `json:"mongo_db"`
+	MongoEnabled       bool   `json:"mongo_enabled"`
+	MongoURI           string `json:"mongo_uri"`
+	MongoDB            string `json:"mongo_db"`
 	MongoLogCollection string `json:"mongo_log_collection"`
-	
+
 	// 数据库配置
 	PostgresHost     string `json:"postgres_host"`
 	PostgresDB       string `json:"postgres_db"`
 	PostgresUser     string `json:"postgres_user"`
 	PostgresPassword string `json:"postgres_password"`
 	PostgresPort     string `json:"postgres_port"`
-	
+
 	// Redis配置
 	RedisHost string `json:"redis_host"`
-	
+
 	// JWT配置
 	JWTSecretKey string `json:"jwt_secret_key"`
 	APISecretKey string `json:"api_secret_key"`
+
+	// 日志配置
+	LogLevel string `json:"log_level"`
 }
 
 // LoadConfig 从.env文件和环境变量加载配置
 func LoadConfig() *Config {
 	// 尝试加载.env文件，如果文件不存在也不会报错
 	loadEnvFiles()
-	
+
 	return &Config{
 		// MongoDB配置 - 默认启用，可通过环境变量禁用
 		MongoEnabled:       getBoolEnv("MONGO_ENABLED", true),
-		MongoURI:          getEnv("MONGO_URI", "mongodb://localhost:27017"),
-		MongoDB:           getEnv("MONGO_DB", "logging"),
+		MongoURI:           getEnv("MONGO_URI", "mongodb://localhost:27017"),
+		MongoDB:            getEnv("MONGO_DB", "logging"),
 		MongoLogCollection: getEnv("MONGO_LOG_COLLECTION", "logs"),
-		
+
 		// 数据库配置
 		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
 		PostgresDB:       getEnv("POSTGRES_DB", "go_app_dev"),
 		PostgresUser:     getEnv("POSTGRES_USER", "docker"),
 		PostgresPassword: getEnv("POSTGRES_PASSWORD", "password"),
 		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
-		
+
 		// Redis配置
 		RedisHost: getEnv("REDIS_HOST", "localhost"),
-		
+
 		// JWT配置
 		JWTSecretKey: getEnv("JWT_SECRET_KEY", ""),
 		APISecretKey: getEnv("API_SECRET_KEY", ""),
+
+		// 日志配置
+		LogLevel: getEnv("LOG_LEVEL", "info"),
 	}
 }
 
@@ -64,11 +70,11 @@ func LoadConfig() *Config {
 // 优先级：.env.local > .env.{environment} > .env
 func loadEnvFiles() {
 	envFiles := []string{
-		".env",                    // 基础配置
-		".env." + getGinMode(),    // 环境特定配置 (.env.development, .env.production)
-		".env.local",              // 本地覆盖配置（通常在.gitignore中）
+		".env",                 // 基础配置
+		".env." + getGinMode(), // 环境特定配置 (.env.development, .env.production)
+		".env.local",           // 本地覆盖配置（通常在.gitignore中）
 	}
-	
+
 	for _, file := range envFiles {
 		if err := godotenv.Load(file); err != nil {
 			// 只有.env文件不存在时才记录日志，其他文件可选

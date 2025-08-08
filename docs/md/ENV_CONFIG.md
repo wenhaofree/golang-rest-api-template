@@ -65,6 +65,7 @@ MONGO_LOG_COLLECTION=logs       # 日志集合名
 ### 应用配置
 ```bash
 GIN_MODE=debug                  # Gin运行模式: debug/release/test
+LOG_LEVEL=info                  # 日志级别: debug/info/warn/error
 PORT=8001                       # 应用端口
 ```
 
