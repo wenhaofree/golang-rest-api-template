@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"golang-rest-api-template/pkg/apperrors"
 	"golang-rest-api-template/pkg/cache"
 	"golang-rest-api-template/pkg/database"
 	"golang-rest-api-template/pkg/models"
@@ -50,7 +51,7 @@ func NewUserRepository(db database.Database, redisClient cache.Cache, ctx *conte
 func (r *userRepository) LoginHandler(c *gin.Context) {
 	var req models.LoginUser
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request format")
+		c.Error(apperrors.Wrap("BAD_REQUEST", "Invalid request", 400, err))
 		return
 	}
 	token, user, err := r.service.Login(c.Request.Context(), req)
@@ -60,11 +61,11 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 	}
 	switch err {
 	case services.ErrInvalid:
-		response.BadRequest(c, "Email and password are required")
+		c.Error(apperrors.ErrBadRequest)
 	case services.ErrUnauthorized:
-		response.Unauthorized(c, "Invalid email or password")
+		c.Error(apperrors.ErrUnauthorized)
 	default:
-		response.InternalServerError(c, "Authentication service temporarily unavailable")
+		c.Error(apperrors.ErrInternal)
 	}
 }
 
@@ -84,7 +85,7 @@ func (r *userRepository) LoginHandler(c *gin.Context) {
 func (r *userRepository) RegisterHandler(c *gin.Context) {
 	var req models.RegisterUser
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, err.Error())
+		c.Error(apperrors.Wrap("BAD_REQUEST", "Invalid request", 400, err))
 		return
 	}
 	user, err := r.service.Register(c.Request.Context(), req)
@@ -94,11 +95,11 @@ func (r *userRepository) RegisterHandler(c *gin.Context) {
 	}
 	switch err {
 	case services.ErrInvalid:
-		response.BadRequest(c, "Invalid input")
+		c.Error(apperrors.ErrBadRequest)
 	case services.ErrConflict:
-		response.BadRequest(c, "User with this email already exists")
+		c.Error(apperrors.ErrConflict)
 	default:
-		response.InternalServerError(c, "Could not save user")
+		c.Error(apperrors.ErrInternal)
 	}
 }
 
@@ -161,7 +162,7 @@ func (r *userRepository) ThirdPartyLoginHandler(c *gin.Context) {
 		return
 	}
 	if err == services.ErrInvalid {
-		response.BadRequest(c, "Provider user ID and email are required")
+		c.Error(apperrors.ErrBadRequest)
 	} else {
 		response.InternalServerError(c, "Authentication service temporarily unavailable")
 	}
@@ -194,7 +195,7 @@ func (r *userRepository) GetUserProfile(c *gin.Context) {
 		if err == services.ErrNotFound {
 			response.NotFound(c, "User not found")
 		} else {
-			response.InternalServerError(c, "Database error")
+			c.Error(apperrors.ErrInternal)
 		}
 		return
 	}
@@ -228,7 +229,7 @@ func (r *userRepository) UpdateUserProfile(c *gin.Context) {
 	}
 	var update models.UpdateUser
 	if err := c.ShouldBindJSON(&update); err != nil {
-		response.BadRequest(c, err.Error())
+		c.Error(apperrors.Wrap("BAD_REQUEST", "Invalid request", 400, err))
 		return
 	}
 	resp, err := r.service.UpdateProfile(c.Request.Context(), emailStr, update)
@@ -236,7 +237,7 @@ func (r *userRepository) UpdateUserProfile(c *gin.Context) {
 		if err == services.ErrNotFound {
 			response.NotFound(c, "User not found")
 		} else {
-			response.InternalServerError(c, "Failed to update user")
+			c.Error(apperrors.ErrInternal)
 		}
 		return
 	}
@@ -269,7 +270,7 @@ func (r *userRepository) SoftDeleteUser(c *gin.Context) {
 		if err == services.ErrNotFound {
 			response.NotFound(c, "User not found")
 		} else {
-			response.InternalServerError(c, "Failed to delete user")
+			c.Error(apperrors.ErrInternal)
 		}
 		return
 	}

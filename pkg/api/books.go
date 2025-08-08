@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"golang-rest-api-template/pkg/apperrors"
 	"golang-rest-api-template/pkg/cache"
 	"golang-rest-api-template/pkg/database"
 	"golang-rest-api-template/pkg/models"
@@ -83,19 +84,19 @@ func (r *bookRepository) FindBooks(c *gin.Context) {
 	// Convert query params to integers
 	offset, err := strconv.Atoi(offsetQuery)
 	if err != nil {
-		response.BadRequest(c, "Invalid offset format")
+		c.Error(apperrors.ErrBadRequest)
 		return
 	}
 
 	limit, err := strconv.Atoi(limitQuery)
 	if err != nil {
-		response.BadRequest(c, "Invalid limit format")
+		c.Error(apperrors.ErrBadRequest)
 		return
 	}
 
 	books, err = r.service.ListBooks(c.Request.Context(), offset, limit)
 	if err != nil {
-		response.InternalServerError(c, "Failed to list books")
+		c.Error(apperrors.ErrInternal)
 		return
 	}
 	response.Success(c, books)
@@ -117,12 +118,12 @@ func (r *bookRepository) FindBooks(c *gin.Context) {
 func (r *bookRepository) CreateBook(c *gin.Context) {
 	var input models.CreateBook
 	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, err.Error())
+		c.Error(apperrors.Wrap("BAD_REQUEST", "Invalid request", 400, err))
 		return
 	}
 	book, err := r.service.CreateBook(c.Request.Context(), input)
 	if err != nil {
-		response.InternalServerError(c, "Failed to create book")
+		c.Error(apperrors.ErrInternal)
 		return
 	}
 	response.SuccessWithMessage(c, book, "Book created successfully")
@@ -141,7 +142,7 @@ func (r *bookRepository) CreateBook(c *gin.Context) {
 func (r *bookRepository) FindBook(c *gin.Context) {
 	book, err := r.service.GetBook(c.Request.Context(), c.Param("id"))
 	if err != nil {
-		response.NotFound(c, "book not found")
+		c.Error(apperrors.ErrNotFound)
 		return
 	}
 	response.Success(c, book)
@@ -163,12 +164,12 @@ func (r *bookRepository) FindBook(c *gin.Context) {
 func (r *bookRepository) UpdateBook(c *gin.Context) {
 	var input models.UpdateBook
 	if err := c.ShouldBindJSON(&input); err != nil {
-		response.BadRequest(c, err.Error())
+		c.Error(apperrors.Wrap("BAD_REQUEST", "Invalid request", 400, err))
 		return
 	}
 	book, err := r.service.UpdateBook(c.Request.Context(), c.Param("id"), input)
 	if err != nil {
-		response.NotFound(c, "book not found")
+		c.Error(apperrors.ErrNotFound)
 		return
 	}
 	response.SuccessWithMessage(c, book, "Book updated successfully")
@@ -186,7 +187,7 @@ func (r *bookRepository) UpdateBook(c *gin.Context) {
 // @Router /books/{id} [delete]
 func (r *bookRepository) DeleteBook(c *gin.Context) {
 	if err := r.service.DeleteBook(c.Request.Context(), c.Param("id")); err != nil {
-		response.NotFound(c, "book not found")
+		c.Error(apperrors.ErrNotFound)
 		return
 	}
 	response.SuccessWithMessage(c, true, "Book deleted successfully")
