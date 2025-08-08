@@ -2,11 +2,11 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"golang-rest-api-template/pkg/cache"
 	"golang-rest-api-template/pkg/database"
 	"golang-rest-api-template/pkg/models"
 	"golang-rest-api-template/pkg/response"
+	"golang-rest-api-template/pkg/services"
 	"strconv"
 	"time"
 
@@ -22,20 +22,14 @@ type BookRepository interface {
 	DeleteBook(c *gin.Context)
 }
 
-// bookRepository holds shared resources like database and Redis client
 type bookRepository struct {
-	DB          database.Database
-	RedisClient cache.Cache
-	Ctx         *context.Context
+	service services.BookService
 }
 
-// NewAppContext creates a new AppContext
+// NewBookRepository wires db/cache into service and returns handler
 func NewBookRepository(db database.Database, redisClient cache.Cache, ctx *context.Context) *bookRepository {
-	return &bookRepository{
-		DB:          db,
-		RedisClient: redisClient,
-		Ctx:         ctx,
-	}
+	svc := services.NewBookService(db, redisClient)
+	return &bookRepository{service: svc}
 }
 
 // @BasePath /api/v1
@@ -58,14 +52,14 @@ func (r *bookRepository) Healthcheck(c *gin.Context) {
 			"redis":    "connected", // 假设Redis连接正常，实际可以添加检查
 		},
 	}
-	
+
 	// 从上下文中获取MongoDB状态（如果有的话）
 	if mongoStatus, exists := c.Get("mongo_status"); exists {
 		healthStatus["services"].(map[string]interface{})["mongodb"] = mongoStatus
 	} else {
 		healthStatus["services"].(map[string]interface{})["mongodb"] = "disabled"
 	}
-	
+
 	response.Success(c, healthStatus)
 }
 
@@ -99,36 +93,11 @@ func (r *bookRepository) FindBooks(c *gin.Context) {
 		return
 	}
 
-	// Create a cache key based on query params
-	cacheKey := "books_offset_" + offsetQuery + "_limit_" + limitQuery
-
-	// Try fetching the data from Redis first
-	cachedBooks, err := r.RedisClient.Get(*r.Ctx, cacheKey).Result()
-	if err == nil {
-		err := json.Unmarshal([]byte(cachedBooks), &books)
-		if err != nil {
-			response.InternalServerError(c, "Failed to unmarshal cached data")
-			return
-		}
-		response.Success(c, books)
-		return
-	}
-
-	// If cache missed, fetch data from the database
-	r.DB.Offset(offset).Limit(limit).Find(&books)
-
-	// Serialize books object and store it in Redis
-	serializedBooks, err := json.Marshal(books)
+	books, err = r.service.ListBooks(c.Request.Context(), offset, limit)
 	if err != nil {
-		response.InternalServerError(c, "Failed to marshal data")
+		response.InternalServerError(c, "Failed to list books")
 		return
 	}
-	err = r.RedisClient.Set(*r.Ctx, cacheKey, serializedBooks, time.Minute).Err() // Here TTL is set to one hour
-	if err != nil {
-		response.InternalServerError(c, "Failed to set cache")
-		return
-	}
-
 	response.Success(c, books)
 }
 
@@ -146,31 +115,16 @@ func (r *bookRepository) FindBooks(c *gin.Context) {
 // @Failure 401 {string} string "Unauthorized"
 // @Router /books [post]
 func (r *bookRepository) CreateBook(c *gin.Context) {
-	appCtx, exists := c.MustGet("appCtx").(*bookRepository)
-	if !exists {
-		response.InternalServerError(c, "internal server error")
-		return
-	}
 	var input models.CreateBook
-
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
-
-	book := models.Book{Title: input.Title, Author: input.Author}
-
-	appCtx.DB.Create(&book)
-
-	// Invalidate cache
-	keysPattern := "books_offset_*"
-	keys, err := appCtx.RedisClient.Keys(*appCtx.Ctx, keysPattern).Result()
-	if err == nil {
-		for _, key := range keys {
-			appCtx.RedisClient.Del(*appCtx.Ctx, key)
-		}
+	book, err := r.service.CreateBook(c.Request.Context(), input)
+	if err != nil {
+		response.InternalServerError(c, "Failed to create book")
+		return
 	}
-
 	response.SuccessWithMessage(c, book, "Book created successfully")
 }
 
@@ -185,13 +139,11 @@ func (r *bookRepository) CreateBook(c *gin.Context) {
 // @Failure 404 {string} string "Book not found"
 // @Router /books/{id} [get]
 func (r *bookRepository) FindBook(c *gin.Context) {
-	var book models.Book
-
-	if err := r.DB.Where("id = ?", c.Param("id")).First(&book).Error(); err != nil {
+	book, err := r.service.GetBook(c.Request.Context(), c.Param("id"))
+	if err != nil {
 		response.NotFound(c, "book not found")
 		return
 	}
-
 	response.Success(c, book)
 }
 
@@ -209,21 +161,16 @@ func (r *bookRepository) FindBook(c *gin.Context) {
 // @Failure 404 {string} string "book not found"
 // @Router /books/{id} [put]
 func (r *bookRepository) UpdateBook(c *gin.Context) {
-	var book models.Book
 	var input models.UpdateBook
-
-	if err := r.DB.Where("id = ?", c.Param("id")).First(&book).Error(); err != nil {
-		response.NotFound(c, "book not found")
-		return
-	}
-
 	if err := c.ShouldBindJSON(&input); err != nil {
 		response.BadRequest(c, err.Error())
 		return
 	}
-
-	r.DB.Model(&book).Updates(models.Book{Title: input.Title, Author: input.Author})
-
+	book, err := r.service.UpdateBook(c.Request.Context(), c.Param("id"), input)
+	if err != nil {
+		response.NotFound(c, "book not found")
+		return
+	}
 	response.SuccessWithMessage(c, book, "Book updated successfully")
 }
 
@@ -238,14 +185,9 @@ func (r *bookRepository) UpdateBook(c *gin.Context) {
 // @Failure 404 {string} string "book not found"
 // @Router /books/{id} [delete]
 func (r *bookRepository) DeleteBook(c *gin.Context) {
-	var book models.Book
-
-	if err := r.DB.Where("id = ?", c.Param("id")).First(&book).Error(); err != nil {
+	if err := r.service.DeleteBook(c.Request.Context(), c.Param("id")); err != nil {
 		response.NotFound(c, "book not found")
 		return
 	}
-
-	r.DB.Delete(&book)
-
 	response.SuccessWithMessage(c, true, "Book deleted successfully")
 }

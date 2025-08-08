@@ -18,13 +18,6 @@ import (
 	"golang.org/x/time/rate"
 )
 
-func ContextMiddleware(bookRepository BookRepository) gin.HandlerFunc {
-	return func(c *gin.Context) {
-		c.Set("appCtx", bookRepository)
-		c.Next()
-	}
-}
-
 func MongoStatusMiddleware(mongoCollection *mongo.Collection) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if mongoCollection != nil {
@@ -43,7 +36,6 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 	r := gin.Default()
 	// 注入每请求 logger 与 request_id
 	r.Use(middleware.RequestContextLogger(logger))
-	r.Use(ContextMiddleware(bookRepository))
 	r.Use(MongoStatusMiddleware(mongoCollection)) // 设置MongoDB状态到上下文
 
 	// 性能监控中间件
