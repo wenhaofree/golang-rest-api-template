@@ -78,7 +78,7 @@
 4) Swagger 安全
 - 生产环境默认关闭 /swagger；或至少使用 API Key/Basic Auth 保护；或仅在非生产暴露
 
-5) 统一错误与响应
+5) 统一错误与响应 ✅
 - apperrors 定义标准错误码/分类（例如 APP-XXX），响应统一：{requestId, code, message, details}
 - 统一在 ErrorHandler 中注入 request_id，并输出一致的 JSON，避免各 Handler 自行拼装
 

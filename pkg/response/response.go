@@ -12,11 +12,21 @@ type Response struct {
 	Message string      `json:"message"`
 }
 
+// ErrorEnvelope 统一错误响应结构
+// 示例: {"requestId":"...","code":"APP-400","message":"Bad request","details":{...}}
+type ErrorEnvelope struct {
+	RequestID string      `json:"requestId"`
+	Code      string      `json:"code"`
+	Message   string      `json:"message"`
+	Details   interface{} `json:"details,omitempty"`
+}
+
 const (
 	SUCCESS = 0
 	ERROR   = 1
 )
 
+// 成功响应保持不变，避免破坏已有客户端
 func Success(c *gin.Context, data interface{}) {
 	c.JSON(http.StatusOK, Response{
 		Code:    SUCCESS,
@@ -33,6 +43,7 @@ func SuccessWithMessage(c *gin.Context, data interface{}, message string) {
 	})
 }
 
+// 兼容旧错误函数（不含 requestId），建议统一使用 ErrorJSON
 func Error(c *gin.Context, httpStatus int, message string) {
 	c.JSON(httpStatus, Response{
 		Code:    ERROR,
@@ -47,6 +58,16 @@ func ErrorWithData(c *gin.Context, httpStatus int, data interface{}, message str
 		Data:    data,
 		Message: message,
 	})
+}
+
+// ErrorJSON 输出统一错误结构（包含 requestId, code, message, details）
+func ErrorJSON(c *gin.Context, httpStatus int, appCode string, message string, details interface{}) {
+	reqID := c.GetString("request_id")
+	if reqID == "" {
+		reqID = c.GetHeader("X-Request-ID")
+	}
+	env := ErrorEnvelope{RequestID: reqID, Code: appCode, Message: message, Details: details}
+	c.JSON(httpStatus, env)
 }
 
 func BadRequest(c *gin.Context, message string) {
