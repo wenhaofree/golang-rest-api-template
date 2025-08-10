@@ -43,9 +43,9 @@ func main() {
 	// 加载配置
 	cfg := config.LoadConfig()
 
-	// 初始化各种服务
-	redisClient := cache.NewRedisClient()
-	db := database.NewDatabase()
+	// 初始化各种服务（统一使用 cfg）
+	redisClient := cache.NewRedisClient(cfg)
+	db := database.NewDatabase(cfg)
 	dbWrapper := &database.GormDatabase{DB: db}
 
 	// 根据配置决定是否启用MongoDB
@@ -71,7 +71,7 @@ func main() {
 	//gin.SetMode(gin.ReleaseMode)
 	gin.SetMode(gin.DebugMode)
 
-	r := api.NewRouter(logger, mongoCollection, dbWrapper, redisClient, &ctx)
+	r := api.NewRouter(logger, mongoCollection, dbWrapper, redisClient, &ctx, cfg.RequestTimeoutMs)
 
 	log.Printf("Server starting on port 8001...")
 	log.Printf("MongoDB logging enabled: %v", cfg.MongoEnabled)

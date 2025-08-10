@@ -49,7 +49,7 @@ func (s *userService) Login(ctx context.Context, req models.LoginUser) (string, 
 			}
 		}
 	}
-	if err := s.db.Where("email = ? AND deleted_at IS NULL AND is_active = ?", req.Email, true).First(&u).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL AND is_active = ?", req.Email, true).First(&u).Error(); err != nil {
 		// 防时序攻击
 		_ = bcrypt.CompareHashAndPassword([]byte(auth.GetDummyHash()), []byte(req.Password))
 		return "", models.User{}, ErrUnauthorized
@@ -73,7 +73,7 @@ func (s *userService) Register(ctx context.Context, req models.RegisterUser) (mo
 		return models.User{}, ErrInvalid
 	}
 	var existing models.User
-	if err := s.db.Where("email = ? AND deleted_at IS NULL", req.Email).First(&existing).Error(); err == nil {
+	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", req.Email).First(&existing).Error(); err == nil {
 		return models.User{}, ErrConflict
 	}
 	hash, err := auth.HashPassword(req.Password)
@@ -89,7 +89,7 @@ func (s *userService) Register(ctx context.Context, req models.RegisterUser) (mo
 		provider = models.AuthProviderEmail
 	}
 	u := models.User{Email: req.Email, FullName: &req.FullName, HashedPassword: &hash, Platform: platform, AuthProvider: provider, IsActive: true}
-	if err := s.db.Create(&u).Error; err != nil {
+	if err := s.db.WithContext(ctx).Create(&u).Error; err != nil {
 		return models.User{}, ErrInternal
 	}
 	return u, nil
@@ -110,7 +110,7 @@ func (s *userService) List(ctx context.Context, offset, limit int) ([]models.Use
 		}
 	}
 	var users []models.User
-	if err := s.db.Where("deleted_at IS NULL").Order("created_at DESC").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("deleted_at IS NULL").Order("created_at DESC").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
 		return nil, ErrInternal
 	}
 	usersResp = make([]models.UserResponse, 0, len(users))
@@ -142,17 +142,17 @@ func (s *userService) ThirdPartyLogin(ctx context.Context, req models.ThirdParty
 			_ = s.cache.Del(ctx, cacheKey)
 		}
 	}
-	if err := s.db.Where("provider_user_id = ? AND auth_provider = ? AND deleted_at IS NULL AND is_active = ?", req.ProviderUserID, req.AuthProvider, true).First(&u).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("provider_user_id = ? AND auth_provider = ? AND deleted_at IS NULL AND is_active = ?", req.ProviderUserID, req.AuthProvider, true).First(&u).Error(); err != nil {
 		// create new or attach
 		u = models.User{Email: req.Email, FullName: &req.FullName, Platform: req.Platform, AuthProvider: req.AuthProvider, ProviderUserID: &req.ProviderUserID, AvatarURL: &req.AvatarURL, IsActive: true}
-		if err := s.db.Create(&u).Error; err != nil {
+		if err := s.db.WithContext(ctx).Create(&u).Error; err != nil {
 			var existing models.User
-			if err := s.db.Where("email = ? AND deleted_at IS NULL", req.Email).First(&existing).Error(); err == nil {
+			if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", req.Email).First(&existing).Error(); err == nil {
 				update := models.User{ProviderUserID: &req.ProviderUserID, AuthProvider: req.AuthProvider}
 				if req.AvatarURL != "" {
 					update.AvatarURL = &req.AvatarURL
 				}
-				_ = s.db.Model(&existing).Updates(update)
+				_ = s.db.WithContext(ctx).Model(&existing).Updates(update)
 				u = existing
 			} else {
 				return "", models.User{}, ErrInternal
@@ -173,7 +173,7 @@ func (s *userService) GetProfile(ctx context.Context, email string) (models.User
 		return models.UserResponse{}, ErrInvalid
 	}
 	var u models.User
-	if err := s.db.Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
 		return models.UserResponse{}, ErrNotFound
 	}
 	return u.ToResponse(), nil
@@ -184,13 +184,13 @@ func (s *userService) UpdateProfile(ctx context.Context, email string, update mo
 		return models.UserResponse{}, ErrInvalid
 	}
 	var u models.User
-	if err := s.db.Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
 		return models.UserResponse{}, ErrNotFound
 	}
-	if err := s.db.Model(&u).Updates(update).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&u).Updates(update).Error; err != nil {
 		return models.UserResponse{}, ErrInternal
 	}
-	if err := s.db.Where("email = ?", email).First(&u).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("email = ?", email).First(&u).Error(); err != nil {
 		return models.UserResponse{}, ErrInternal
 	}
 	return u.ToResponse(), nil
@@ -201,11 +201,11 @@ func (s *userService) SoftDelete(ctx context.Context, email string) error {
 		return ErrInvalid
 	}
 	var u models.User
-	if err := s.db.Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
 		return ErrNotFound
 	}
 	u.SoftDelete()
-	if err := s.db.Model(&u).Updates(models.User{DeletedAt: u.DeletedAt}).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(&u).Updates(models.User{DeletedAt: u.DeletedAt}).Error; err != nil {
 		return ErrInternal
 	}
 	return nil

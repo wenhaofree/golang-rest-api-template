@@ -39,7 +39,8 @@ func (s *bookService) ListBooks(ctx context.Context, offset, limit int) ([]model
 		}
 	}
 
-	s.db.Offset(offset).Limit(limit).Find(&books)
+	// 使用请求上下文，确保取消/超时可控
+	s.db.WithContext(ctx).Offset(offset).Limit(limit).Find(&books)
 	if s.cache != nil {
 		if b, err := json.Marshal(books); err == nil {
 			_ = s.cache.Set(ctx, cacheKey, b, time.Minute).Err()
@@ -50,7 +51,7 @@ func (s *bookService) ListBooks(ctx context.Context, offset, limit int) ([]model
 
 func (s *bookService) CreateBook(ctx context.Context, input models.CreateBook) (models.Book, error) {
 	book := models.Book{Title: input.Title, Author: input.Author}
-	s.db.Create(&book)
+	s.db.WithContext(ctx).Create(&book)
 	// invalidate list caches
 	if s.cache != nil {
 		if keys, err := s.cache.Keys(ctx, "books_offset_*").Result(); err == nil {
@@ -64,7 +65,7 @@ func (s *bookService) CreateBook(ctx context.Context, input models.CreateBook) (
 
 func (s *bookService) GetBook(ctx context.Context, id string) (models.Book, error) {
 	var book models.Book
-	if err := s.db.Where("id = ?", id).First(&book).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&book).Error(); err != nil {
 		return models.Book{}, ErrNotFound
 	}
 	return book, nil
@@ -72,19 +73,19 @@ func (s *bookService) GetBook(ctx context.Context, id string) (models.Book, erro
 
 func (s *bookService) UpdateBook(ctx context.Context, id string, input models.UpdateBook) (models.Book, error) {
 	var book models.Book
-	if err := s.db.Where("id = ?", id).First(&book).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&book).Error(); err != nil {
 		return models.Book{}, ErrNotFound
 	}
-	s.db.Model(&book).Updates(models.Book{Title: input.Title, Author: input.Author})
+	s.db.WithContext(ctx).Model(&book).Updates(models.Book{Title: input.Title, Author: input.Author})
 	return book, nil
 }
 
 func (s *bookService) DeleteBook(ctx context.Context, id string) error {
 	var book models.Book
-	if err := s.db.Where("id = ?", id).First(&book).Error(); err != nil {
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&book).Error(); err != nil {
 		return ErrNotFound
 	}
-	s.db.Delete(&book)
+	s.db.WithContext(ctx).Delete(&book)
 	return nil
 }
 

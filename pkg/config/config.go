@@ -18,14 +18,34 @@ type Config struct {
 	MongoLogCollection string `json:"mongo_log_collection"`
 
 	// 数据库配置
-	PostgresHost     string `json:"postgres_host"`
-	PostgresDB       string `json:"postgres_db"`
-	PostgresUser     string `json:"postgres_user"`
-	PostgresPassword string `json:"postgres_password"`
-	PostgresPort     string `json:"postgres_port"`
+	PostgresHost                 string `json:"postgres_host"`
+	PostgresDB                   string `json:"postgres_db"`
+	PostgresUser                 string `json:"postgres_user"`
+	PostgresPassword             string `json:"postgres_password"`
+	PostgresPort                 string `json:"postgres_port"`
+	PostgresSSLMode              string `json:"postgres_sslmode"`
+	PostgresMaxOpenConns         int    `json:"postgres_max_open_conns"`
+	PostgresMaxIdleConns         int    `json:"postgres_max_idle_conns"`
+	PostgresConnMaxIdleTimeSec   int    `json:"postgres_conn_max_idle_time_sec"`
+	PostgresConnMaxLifetimeSec   int    `json:"postgres_conn_max_lifetime_sec"`
+	DBConnectMaxRetries          int    `json:"db_connect_max_retries"`
+	DBConnectInitialBackoffMs    int    `json:"db_connect_initial_backoff_ms"`
+	DBQueryTimeoutMs             int    `json:"db_query_timeout_ms"`
 
 	// Redis配置
-	RedisHost string `json:"redis_host"`
+	RedisHost             string `json:"redis_host"`
+	RedisPort             string `json:"redis_port"`
+	RedisPassword         string `json:"redis_password"`
+	RedisDB               int    `json:"redis_db"`
+	RedisPoolSize         int    `json:"redis_pool_size"`
+	RedisMinIdleConns     int    `json:"redis_min_idle_conns"`
+	RedisIdleTimeoutSec   int    `json:"redis_idle_timeout_sec"`
+	RedisDialTimeoutMs    int    `json:"redis_dial_timeout_ms"`
+	RedisReadTimeoutMs    int    `json:"redis_read_timeout_ms"`
+	RedisWriteTimeoutMs   int    `json:"redis_write_timeout_ms"`
+
+	// 请求/服务超时
+	RequestTimeoutMs int `json:"request_timeout_ms"`
 
 	// JWT配置
 	JWTSecretKey string `json:"jwt_secret_key"`
@@ -48,14 +68,34 @@ func LoadConfig() *Config {
 		MongoLogCollection: getEnv("MONGO_LOG_COLLECTION", "logs"),
 
 		// 数据库配置
-		PostgresHost:     getEnv("POSTGRES_HOST", "localhost"),
-		PostgresDB:       getEnv("POSTGRES_DB", "go_app_dev"),
-		PostgresUser:     getEnv("POSTGRES_USER", "docker"),
-		PostgresPassword: getEnv("POSTGRES_PASSWORD", "password"),
-		PostgresPort:     getEnv("POSTGRES_PORT", "5432"),
+		PostgresHost:               getEnv("POSTGRES_HOST", "localhost"),
+		PostgresDB:                 getEnv("POSTGRES_DB", "go_app_dev"),
+		PostgresUser:               getEnv("POSTGRES_USER", "docker"),
+		PostgresPassword:           getEnv("POSTGRES_PASSWORD", "password"),
+		PostgresPort:               getEnv("POSTGRES_PORT", "5432"),
+		PostgresSSLMode:            getEnv("POSTGRES_SSLMODE", "disable"),
+		PostgresMaxOpenConns:       getIntEnv("POSTGRES_MAX_OPEN_CONNS", 25),
+		PostgresMaxIdleConns:       getIntEnv("POSTGRES_MAX_IDLE_CONNS", 25),
+		PostgresConnMaxIdleTimeSec: getIntEnv("POSTGRES_CONN_MAX_IDLE_TIME_SEC", 300),
+		PostgresConnMaxLifetimeSec: getIntEnv("POSTGRES_CONN_MAX_LIFETIME_SEC", 1800),
+		DBConnectMaxRetries:        getIntEnv("DB_CONNECT_MAX_RETRIES", 5),
+		DBConnectInitialBackoffMs:  getIntEnv("DB_CONNECT_INITIAL_BACKOFF_MS", 500),
+		DBQueryTimeoutMs:           getIntEnv("DB_QUERY_TIMEOUT_MS", 3000),
 
 		// Redis配置
-		RedisHost: getEnv("REDIS_HOST", "localhost"),
+		RedisHost:           getEnv("REDIS_HOST", "localhost"),
+		RedisPort:           getEnv("REDIS_PORT", "6379"),
+		RedisPassword:       getEnv("REDIS_PASSWORD", ""),
+		RedisDB:             getIntEnv("REDIS_DB", 0),
+		RedisPoolSize:       getIntEnv("REDIS_POOL_SIZE", 10),
+		RedisMinIdleConns:   getIntEnv("REDIS_MIN_IDLE_CONNS", 2),
+		RedisIdleTimeoutSec: getIntEnv("REDIS_IDLE_TIMEOUT_SEC", 300),
+		RedisDialTimeoutMs:  getIntEnv("REDIS_DIAL_TIMEOUT_MS", 500),
+		RedisReadTimeoutMs:  getIntEnv("REDIS_READ_TIMEOUT_MS", 1000),
+		RedisWriteTimeoutMs: getIntEnv("REDIS_WRITE_TIMEOUT_MS", 1000),
+
+		// 请求/服务超时
+		RequestTimeoutMs: getIntEnv("REQUEST_TIMEOUT_MS", 3000),
 
 		// JWT配置
 		JWTSecretKey: getEnv("JWT_SECRET_KEY", ""),
@@ -123,6 +163,16 @@ func getBoolEnv(key string, defaultValue bool) bool {
 			if parsed, err := strconv.ParseBool(value); err == nil {
 				return parsed
 			}
+		}
+	}
+	return defaultValue
+}
+
+// getIntEnv 获取整型环境变量，如果不存在或无法解析则返回默认值
+func getIntEnv(key string, defaultValue int) int {
+	if value := os.Getenv(key); value != "" {
+		if n, err := strconv.Atoi(value); err == nil {
+			return n
 		}
 	}
 	return defaultValue

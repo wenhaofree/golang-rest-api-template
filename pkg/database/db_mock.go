@@ -5,6 +5,7 @@
 package database
 
 import (
+	context "context"
 	reflect "reflect"
 
 	gomock "github.com/golang/mock/gomock"
@@ -117,6 +118,20 @@ func (mr *MockDatabaseMockRecorder) First(dest interface{}, conds ...interface{}
 	mr.mock.ctrl.T.Helper()
 	varargs := append([]interface{}{dest}, conds...)
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "First", reflect.TypeOf((*MockDatabase)(nil).First), varargs...)
+}
+
+// WithContext mocks base method.
+func (m *MockDatabase) WithContext(ctx context.Context) Database {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "WithContext", ctx)
+	ret0, _ := ret[0].(Database)
+	return ret0
+}
+
+// WithContext indicates an expected call of WithContext.
+func (mr *MockDatabaseMockRecorder) WithContext(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "WithContext", reflect.TypeOf((*MockDatabase)(nil).WithContext), ctx)
 }
 
 // Limit mocks base method.

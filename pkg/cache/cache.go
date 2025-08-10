@@ -2,8 +2,9 @@ package cache
 
 import (
 	"context"
-	"os"
 	"time"
+
+	"golang-rest-api-template/pkg/config"
 
 	"github.com/go-redis/redis/v8"
 )
@@ -15,10 +16,17 @@ type Cache interface {
 	Del(context.Context, ...string) *redis.IntCmd
 }
 
-func NewRedisClient() *redis.Client {
+// NewRedisClient 根据配置创建 Redis 客户端
+func NewRedisClient(cfg *config.Config) *redis.Client {
 	return redis.NewClient(&redis.Options{
-		Addr:     os.Getenv("REDIS_HOST") + ":6379", // Redis server address (change to localhost when running local)
-		Password: "",                                // Password, leave empty if none
-		DB:       0,                                 // Default DB
+		Addr:         cfg.RedisHost + ":" + cfg.RedisPort,
+		Password:     cfg.RedisPassword,
+		DB:           cfg.RedisDB,
+		PoolSize:     cfg.RedisPoolSize,
+		MinIdleConns: cfg.RedisMinIdleConns,
+		IdleTimeout:  time.Duration(cfg.RedisIdleTimeoutSec) * time.Second,
+		DialTimeout:  time.Duration(cfg.RedisDialTimeoutMs) * time.Millisecond,
+		ReadTimeout:  time.Duration(cfg.RedisReadTimeoutMs) * time.Millisecond,
+		WriteTimeout: time.Duration(cfg.RedisWriteTimeoutMs) * time.Millisecond,
 	})
 }

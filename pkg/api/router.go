@@ -29,7 +29,7 @@ func MongoStatusMiddleware(mongoCollection *mongo.Collection) gin.HandlerFunc {
 	}
 }
 
-func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db database.Database, redisClient cache.Cache, ctx *context.Context) *gin.Engine {
+func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db database.Database, redisClient cache.Cache, ctx *context.Context, requestTimeoutMs int) *gin.Engine {
 	bookRepository := NewBookRepository(db, redisClient, ctx)
 	userRepository := NewUserRepository(db, redisClient, ctx)
 
@@ -39,6 +39,9 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 	// 注入每请求 logger 与 request_id
 	r.Use(middleware.RequestContextLogger(logger))
 	r.Use(MongoStatusMiddleware(mongoCollection)) // 设置MongoDB状态到上下文
+
+	// 全局请求超时（结合数据库 statement_timeout，更上游兜底）
+	r.Use(middleware.RequestTimeout(requestTimeoutMs))
 
 	// 性能监控中间件
 	r.Use(middleware.PerformanceMonitor(logger))
