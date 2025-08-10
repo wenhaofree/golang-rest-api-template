@@ -35,10 +35,12 @@ type LoginUser struct {
 }
 
 // ThirdPartyLoginUser 第三方登录请求结构体
+// 说明：Apple/部分平台在非首次登录可能不再返回 email，因此 email 在非首次允许省略
+// 首次创建/绑定账号时仍需提供 email（由服务层校验）
 type ThirdPartyLoginUser struct {
 	AuthProvider   AuthProviderEnum `json:"auth_provider" binding:"required"`
 	ProviderUserID string           `json:"provider_user_id" binding:"required"`
-	Email          string           `json:"email" binding:"required,email"`
+	Email          string           `json:"email" binding:"omitempty,email"`
 	FullName       string           `json:"full_name"`
 	AvatarURL      string           `json:"avatar_url"`
 	Platform       PlatformEnum     `json:"platform" binding:"required"`

@@ -128,11 +128,13 @@ func (s *userService) List(ctx context.Context, offset, limit int) ([]models.Use
 }
 
 func (s *userService) ThirdPartyLogin(ctx context.Context, req models.ThirdPartyLoginUser) (string, models.User, error) {
-	if req.ProviderUserID == "" || req.Email == "" {
+	// 允许非首次登录不传 email；首次创建/绑定必须有 email
+	if req.ProviderUserID == "" || req.AuthProvider == "" {
 		return "", models.User{}, ErrInvalid
 	}
 	cacheKey := fmt.Sprintf("third_party_user:%s:%s", req.AuthProvider, req.ProviderUserID)
 	var u models.User
+	// 1) 缓存命中（非首次登录）
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
 			if err := json.Unmarshal([]byte(cached), &u); err == nil && u.IsActive && !u.IsDeleted() {
@@ -142,23 +144,40 @@ func (s *userService) ThirdPartyLogin(ctx context.Context, req models.ThirdParty
 			_ = s.cache.Del(ctx, cacheKey)
 		}
 	}
-	if err := s.db.WithContext(ctx).Where("provider_user_id = ? AND auth_provider = ? AND deleted_at IS NULL AND is_active = ?", req.ProviderUserID, req.AuthProvider, true).First(&u).Error(); err != nil {
-		// create new or attach
-		u = models.User{Email: req.Email, FullName: &req.FullName, Platform: req.Platform, AuthProvider: req.AuthProvider, ProviderUserID: &req.ProviderUserID, AvatarURL: &req.AvatarURL, IsActive: true}
-		if err := s.db.WithContext(ctx).Create(&u).Error; err != nil {
-			var existing models.User
-			if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", req.Email).First(&existing).Error(); err == nil {
-				update := models.User{ProviderUserID: &req.ProviderUserID, AuthProvider: req.AuthProvider}
-				if req.AvatarURL != "" {
-					update.AvatarURL = &req.AvatarURL
-				}
-				_ = s.db.WithContext(ctx).Model(&existing).Updates(update)
-				u = existing
-			} else {
+	// 2) 数据库命中（非首次登录）
+	if err := s.db.WithContext(ctx).
+		Where("provider_user_id = ? AND auth_provider = ? AND deleted_at IS NULL AND is_active = ?", req.ProviderUserID, req.AuthProvider, true).
+		First(&u).Error(); err == nil {
+		// 命中直接返回
+		t, err := auth.GenerateToken(u.Email)
+		return t, u, err
+	}
+	// 3) 首次登录（需要 email 才能创建/绑定）
+	if req.Email == "" {
+		return "", models.User{}, ErrInvalid
+	}
+	// 尝试创建新用户
+	u = models.User{Email: req.Email, FullName: &req.FullName, Platform: req.Platform, AuthProvider: req.AuthProvider, ProviderUserID: &req.ProviderUserID, AvatarURL: &req.AvatarURL, IsActive: true}
+	if err := s.db.WithContext(ctx).Create(&u).Error; err != nil {
+		// 创建失败，尝试按 email 绑定已有账号（需要检查活跃状态）
+		var existing models.User
+		if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", req.Email).First(&existing).Error(); err == nil {
+			if !existing.IsActive || existing.IsDeleted() {
+				return "", models.User{}, ErrUnauthorized
+			}
+			update := models.User{ProviderUserID: &req.ProviderUserID, AuthProvider: req.AuthProvider}
+			if req.AvatarURL != "" {
+				update.AvatarURL = &req.AvatarURL
+			}
+			if err := s.db.WithContext(ctx).Model(&existing).Updates(update).Error; err != nil {
 				return "", models.User{}, ErrInternal
 			}
+			u = existing
+		} else {
+			return "", models.User{}, ErrInternal
 		}
 	}
+	// 缓存并返回
 	if s.cache != nil {
 		if b, err := json.Marshal(u); err == nil {
 			_ = s.cache.Set(ctx, cacheKey, b, 10*time.Minute).Err()

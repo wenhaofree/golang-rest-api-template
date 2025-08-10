@@ -118,20 +118,20 @@ func (r *userRepository) FindUsers(c *gin.Context) {
 	limitQuery := c.DefaultQuery("limit", "10")
 	offset, err := strconv.Atoi(offsetQuery)
 	if err != nil {
-		response.BadRequest(c, "Invalid offset format")
+		c.Error(apperrors.Wrap("BAD_REQUEST", "Invalid offset format", 400, err))
 		return
 	}
 	limit, err := strconv.Atoi(limitQuery)
 	if err != nil {
-		response.BadRequest(c, "Invalid limit format (max 100)")
+		c.Error(apperrors.Wrap("BAD_REQUEST", "Invalid limit format (max 100)", 400, err))
 		return
 	}
 	users, err := r.service.List(c.Request.Context(), offset, limit)
 	if err != nil {
 		if err == services.ErrInvalid {
-			response.BadRequest(c, "Invalid pagination")
+			c.Error(apperrors.ErrBadRequest)
 		} else {
-			response.InternalServerError(c, "Failed to fetch users")
+			c.Error(apperrors.ErrInternal)
 		}
 		return
 	}
@@ -153,7 +153,7 @@ func (r *userRepository) FindUsers(c *gin.Context) {
 func (r *userRepository) ThirdPartyLoginHandler(c *gin.Context) {
 	var req models.ThirdPartyLoginUser
 	if err := c.ShouldBindJSON(&req); err != nil {
-		response.BadRequest(c, "Invalid request format")
+		c.Error(apperrors.Wrap("BAD_REQUEST", "Invalid request format", 400, err))
 		return
 	}
 	token, user, err := r.service.ThirdPartyLogin(c.Request.Context(), req)
@@ -163,9 +163,9 @@ func (r *userRepository) ThirdPartyLoginHandler(c *gin.Context) {
 	}
 	if err == services.ErrInvalid {
 		c.Error(apperrors.ErrBadRequest)
-	} else {
-		response.InternalServerError(c, "Authentication service temporarily unavailable")
+		return
 	}
+	c.Error(apperrors.ErrInternal)
 }
 
 // GetUserProfile godoc
@@ -182,18 +182,18 @@ func (r *userRepository) ThirdPartyLoginHandler(c *gin.Context) {
 func (r *userRepository) GetUserProfile(c *gin.Context) {
 	email, exists := c.Get("username")
 	if !exists {
-		response.Unauthorized(c, "User not authenticated")
+		c.Error(apperrors.ErrUnauthorized)
 		return
 	}
 	emailStr, ok := email.(string)
 	if !ok || emailStr == "" {
-		response.Unauthorized(c, "Invalid user information in token")
+		c.Error(apperrors.ErrUnauthorized)
 		return
 	}
 	resp, err := r.service.GetProfile(c.Request.Context(), emailStr)
 	if err != nil {
 		if err == services.ErrNotFound {
-			response.NotFound(c, "User not found")
+			c.Error(apperrors.ErrNotFound)
 		} else {
 			c.Error(apperrors.ErrInternal)
 		}
@@ -219,12 +219,12 @@ func (r *userRepository) GetUserProfile(c *gin.Context) {
 func (r *userRepository) UpdateUserProfile(c *gin.Context) {
 	email, exists := c.Get("username")
 	if !exists {
-		response.Unauthorized(c, "User not authenticated")
+		c.Error(apperrors.ErrUnauthorized)
 		return
 	}
 	emailStr, ok := email.(string)
 	if !ok || emailStr == "" {
-		response.Unauthorized(c, "Invalid user information in token")
+		c.Error(apperrors.ErrUnauthorized)
 		return
 	}
 	var update models.UpdateUser
@@ -235,7 +235,7 @@ func (r *userRepository) UpdateUserProfile(c *gin.Context) {
 	resp, err := r.service.UpdateProfile(c.Request.Context(), emailStr, update)
 	if err != nil {
 		if err == services.ErrNotFound {
-			response.NotFound(c, "User not found")
+			c.Error(apperrors.ErrNotFound)
 		} else {
 			c.Error(apperrors.ErrInternal)
 		}
@@ -258,17 +258,17 @@ func (r *userRepository) UpdateUserProfile(c *gin.Context) {
 func (r *userRepository) SoftDeleteUser(c *gin.Context) {
 	email, exists := c.Get("username")
 	if !exists {
-		response.Unauthorized(c, "User not authenticated")
+		c.Error(apperrors.ErrUnauthorized)
 		return
 	}
 	emailStr, ok := email.(string)
 	if !ok || emailStr == "" {
-		response.Unauthorized(c, "Invalid user information in token")
+		c.Error(apperrors.ErrUnauthorized)
 		return
 	}
 	if err := r.service.SoftDelete(c.Request.Context(), emailStr); err != nil {
 		if err == services.ErrNotFound {
-			response.NotFound(c, "User not found")
+			c.Error(apperrors.ErrNotFound)
 		} else {
 			c.Error(apperrors.ErrInternal)
 		}
