@@ -18,34 +18,37 @@ type Config struct {
 	MongoLogCollection string `json:"mongo_log_collection"`
 
 	// 数据库配置
-	PostgresHost                 string `json:"postgres_host"`
-	PostgresDB                   string `json:"postgres_db"`
-	PostgresUser                 string `json:"postgres_user"`
-	PostgresPassword             string `json:"postgres_password"`
-	PostgresPort                 string `json:"postgres_port"`
-	PostgresSSLMode              string `json:"postgres_sslmode"`
-	PostgresMaxOpenConns         int    `json:"postgres_max_open_conns"`
-	PostgresMaxIdleConns         int    `json:"postgres_max_idle_conns"`
-	PostgresConnMaxIdleTimeSec   int    `json:"postgres_conn_max_idle_time_sec"`
-	PostgresConnMaxLifetimeSec   int    `json:"postgres_conn_max_lifetime_sec"`
-	DBConnectMaxRetries          int    `json:"db_connect_max_retries"`
-	DBConnectInitialBackoffMs    int    `json:"db_connect_initial_backoff_ms"`
-	DBQueryTimeoutMs             int    `json:"db_query_timeout_ms"`
+	PostgresHost               string `json:"postgres_host"`
+	PostgresDB                 string `json:"postgres_db"`
+	PostgresUser               string `json:"postgres_user"`
+	PostgresPassword           string `json:"postgres_password"`
+	PostgresPort               string `json:"postgres_port"`
+	PostgresSSLMode            string `json:"postgres_sslmode"`
+	PostgresMaxOpenConns       int    `json:"postgres_max_open_conns"`
+	PostgresMaxIdleConns       int    `json:"postgres_max_idle_conns"`
+	PostgresConnMaxIdleTimeSec int    `json:"postgres_conn_max_idle_time_sec"`
+	PostgresConnMaxLifetimeSec int    `json:"postgres_conn_max_lifetime_sec"`
+	DBConnectMaxRetries        int    `json:"db_connect_max_retries"`
+	DBConnectInitialBackoffMs  int    `json:"db_connect_initial_backoff_ms"`
+	DBQueryTimeoutMs           int    `json:"db_query_timeout_ms"`
 
 	// Redis配置
-	RedisHost             string `json:"redis_host"`
-	RedisPort             string `json:"redis_port"`
-	RedisPassword         string `json:"redis_password"`
-	RedisDB               int    `json:"redis_db"`
-	RedisPoolSize         int    `json:"redis_pool_size"`
-	RedisMinIdleConns     int    `json:"redis_min_idle_conns"`
-	RedisIdleTimeoutSec   int    `json:"redis_idle_timeout_sec"`
-	RedisDialTimeoutMs    int    `json:"redis_dial_timeout_ms"`
-	RedisReadTimeoutMs    int    `json:"redis_read_timeout_ms"`
-	RedisWriteTimeoutMs   int    `json:"redis_write_timeout_ms"`
+	RedisHost           string `json:"redis_host"`
+	RedisPort           string `json:"redis_port"`
+	RedisPassword       string `json:"redis_password"`
+	RedisDB             int    `json:"redis_db"`
+	RedisPoolSize       int    `json:"redis_pool_size"`
+	RedisMinIdleConns   int    `json:"redis_min_idle_conns"`
+	RedisIdleTimeoutSec int    `json:"redis_idle_timeout_sec"`
+	RedisDialTimeoutMs  int    `json:"redis_dial_timeout_ms"`
+	RedisReadTimeoutMs  int    `json:"redis_read_timeout_ms"`
+	RedisWriteTimeoutMs int    `json:"redis_write_timeout_ms"`
 
 	// 请求/服务超时
 	RequestTimeoutMs int `json:"request_timeout_ms"`
+
+	// 应用配置
+	Port string `json:"port"`
 
 	// JWT配置
 	JWTSecretKey string `json:"jwt_secret_key"`
@@ -96,6 +99,9 @@ func LoadConfig() *Config {
 
 		// 请求/服务超时
 		RequestTimeoutMs: getIntEnv("REQUEST_TIMEOUT_MS", 3000),
+
+		// 应用配置
+		Port: getEnv("PORT", "8001"),
 
 		// JWT配置
 		JWTSecretKey: getEnv("JWT_SECRET_KEY", ""),

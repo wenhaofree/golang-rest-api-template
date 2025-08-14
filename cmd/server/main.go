@@ -73,10 +73,10 @@ func main() {
 
 	r := api.NewRouter(logger, mongoCollection, dbWrapper, redisClient, &ctx, cfg.RequestTimeoutMs)
 
-	log.Printf("Server starting on port 8001...")
+	log.Printf("Server starting on port %s...", cfg.Port)
 	log.Printf("MongoDB logging enabled: %v", cfg.MongoEnabled)
 
-	if err := r.Run(":8001"); err != nil {
+	if err := r.Run(":" + cfg.Port); err != nil {
 		log.Fatal(err)
 	}
 }
