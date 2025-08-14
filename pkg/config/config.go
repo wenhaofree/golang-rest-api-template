@@ -47,6 +47,10 @@ type Config struct {
 	// 请求/服务超时
 	RequestTimeoutMs int `json:"request_timeout_ms"`
 
+	// 速率限制配置
+	RateLimitRequests int `json:"rate_limit_requests"`
+	RateLimitWindow   int `json:"rate_limit_window"` // 时间窗口（秒）
+
 	// 应用配置
 	Port string `json:"port"`
 
@@ -100,6 +104,10 @@ func LoadConfig() *Config {
 
 		// 请求/服务超时
 		RequestTimeoutMs: getIntEnv("REQUEST_TIMEOUT_MS", 3000),
+
+		// 速率限制配置
+		RateLimitRequests: getIntEnv("RATE_LIMIT_REQUESTS", 60),
+		RateLimitWindow:   getIntEnv("RATE_LIMIT_WINDOW", 60),
 
 		// 应用配置
 		Port: getEnv("PORT", "8001"),

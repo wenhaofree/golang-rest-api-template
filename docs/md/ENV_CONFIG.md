@@ -85,6 +85,24 @@ LOG_COLORIZED=true              # 是否启用彩色日志输出
 - 生产环境建议禁用 (`LOG_COLORIZED=false`) 以便日志收集工具处理
 - 支持 `NO_COLOR` 环境变量全局禁用颜色
 
+### 速率限制配置
+```bash
+RATE_LIMIT_REQUESTS=60          # 时间窗口内允许的请求数
+RATE_LIMIT_WINDOW=60            # 时间窗口大小（秒）
+```
+
+#### 速率限制说明
+- `RATE_LIMIT_REQUESTS`: 在指定时间窗口内允许的最大请求数
+- `RATE_LIMIT_WINDOW`: 时间窗口大小，单位为秒
+- 超过限制时返回 HTTP 429 "Rate limit exceeded"
+- 使用令牌桶算法实现平滑限流
+
+#### 不同环境建议
+- **开发环境**: 相对宽松的限制 (如 120 requests/60s)
+- **测试环境**: 中等限制 (如 80 requests/60s)
+- **生产环境**: 严格限制 (如 60 requests/60s)
+- **高负载场景**: 可适当调高限制或缩短窗口时间
+
 ## 使用方法
 
 ### 1. 初始化配置

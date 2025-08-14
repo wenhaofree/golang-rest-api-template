@@ -29,7 +29,7 @@ func MongoStatusMiddleware(mongoCollection *mongo.Collection) gin.HandlerFunc {
 	}
 }
 
-func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db database.Database, redisClient cache.Cache, ctx *context.Context, requestTimeoutMs int) *gin.Engine {
+func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db database.Database, redisClient cache.Cache, ctx *context.Context, requestTimeoutMs int, rateLimitRequests int, rateLimitWindow int) *gin.Engine {
 	bookRepository := NewBookRepository(db, redisClient, ctx)
 	userRepository := NewUserRepository(db, redisClient, ctx)
 
@@ -56,7 +56,9 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 		r.Use(middleware.Xss())
 	}
 	r.Use(middleware.Cors())
-	r.Use(middleware.RateLimiter(rate.Every(1*time.Minute), 60)) // 60 requests per minute
+	// 使用配置化的速率限制
+	rateLimitInterval := time.Duration(rateLimitWindow) * time.Second
+	r.Use(middleware.RateLimiter(rate.Every(rateLimitInterval), rateLimitRequests))
 
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	v1 := r.Group("/api/v1")

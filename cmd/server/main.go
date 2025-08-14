@@ -71,7 +71,7 @@ func main() {
 	//gin.SetMode(gin.ReleaseMode)
 	gin.SetMode(gin.DebugMode)
 
-	r := api.NewRouter(logger, mongoCollection, dbWrapper, redisClient, &ctx, cfg.RequestTimeoutMs)
+	r := api.NewRouter(logger, mongoCollection, dbWrapper, redisClient, &ctx, cfg.RequestTimeoutMs, cfg.RateLimitRequests, cfg.RateLimitWindow)
 
 	log.Printf("Server starting on port %s...", cfg.Port)
 	log.Printf("MongoDB logging enabled: %v", cfg.MongoEnabled)
