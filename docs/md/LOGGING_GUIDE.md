@@ -11,13 +11,28 @@ This document describes the improved logging architecture and how to configure a
 
 ## Configuration
 - LOG_LEVEL: debug | info | warn | error (default: info)
+- LOG_COLORIZED: enable/disable colored log output (default: true)
 - MONGO_ENABLED: enable/disable MongoDB logging (default: true)
 
 Example `.env`:
 ```
 LOG_LEVEL=debug
+LOG_COLORIZED=true
 MONGO_ENABLED=true
 ```
+
+### Colored Logging
+The logging system supports colored output for better readability in development:
+- **DEBUG**: Gray text for debugging information
+- **INFO**: Green text for general information
+- **WARN**: Yellow text for warnings
+- **ERROR**: Red text for errors
+
+Colors are automatically disabled when:
+- `LOG_COLORIZED=false` is set
+- `NO_COLOR` environment variable is set
+- `TERM=dumb` is set
+- Output is not a terminal (e.g., redirected to file)
 
 ## Components
 - pkg/logging/logger.go: centralized logger initialization

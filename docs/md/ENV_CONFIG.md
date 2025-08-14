@@ -65,9 +65,25 @@ MONGO_LOG_COLLECTION=logs       # 日志集合名
 ### 应用配置
 ```bash
 GIN_MODE=debug                  # Gin运行模式: debug/release/test
-LOG_LEVEL=info                  # 日志级别: debug/info/warn/error
 PORT=8001                       # 应用端口
 ```
+
+### 日志配置
+```bash
+LOG_LEVEL=info                  # 日志级别: debug/info/warn/error
+LOG_COLORIZED=true              # 是否启用彩色日志输出
+```
+
+#### 日志级别说明
+- `debug`: 详细的调试信息，包括函数调用、变量值等
+- `info`: 一般信息，如用户操作、系统状态等
+- `warn`: 警告信息，如性能问题、配置问题等
+- `error`: 错误信息，如异常、失败操作等
+
+#### 彩色日志
+- 开发环境建议启用 (`LOG_COLORIZED=true`) 以提高可读性
+- 生产环境建议禁用 (`LOG_COLORIZED=false`) 以便日志收集工具处理
+- 支持 `NO_COLOR` 环境变量全局禁用颜色
 
 ## 使用方法
 

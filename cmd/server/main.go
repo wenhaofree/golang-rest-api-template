@@ -62,7 +62,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	logger, _, err := logging.NewLogger(cfg.LogLevel, gin.Mode() != gin.ReleaseMode)
+	logger, _, err := logging.NewLoggerWithColor(cfg.LogLevel, gin.Mode() != gin.ReleaseMode, cfg.LogColorized)
 	if err != nil {
 		log.Fatalf("failed to init logger: %v", err)
 	}

@@ -55,7 +55,8 @@ type Config struct {
 	APISecretKey string `json:"api_secret_key"`
 
 	// 日志配置
-	LogLevel string `json:"log_level"`
+	LogLevel     string `json:"log_level"`
+	LogColorized bool   `json:"log_colorized"`
 }
 
 // LoadConfig 从.env文件和环境变量加载配置
@@ -108,7 +109,8 @@ func LoadConfig() *Config {
 		APISecretKey: getEnv("API_SECRET_KEY", ""),
 
 		// 日志配置
-		LogLevel: getEnv("LOG_LEVEL", "info"),
+		LogLevel:     getEnv("LOG_LEVEL", "info"),
+		LogColorized: getBoolEnv("LOG_COLORIZED", true),
 	}
 }
 
