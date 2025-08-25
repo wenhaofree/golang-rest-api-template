@@ -35,3 +35,4 @@ venv
 
 # Database data
 .dbdata/
+goapi-go
