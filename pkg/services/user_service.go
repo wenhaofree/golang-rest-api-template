@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"golang-rest-api-template/pkg/auth"
 	"golang-rest-api-template/pkg/cache"
-	"golang-rest-api-template/pkg/database"
 	"golang-rest-api-template/pkg/models"
+	"golang-rest-api-template/pkg/repositories"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -24,62 +24,93 @@ type UserService interface {
 }
 
 type userService struct {
-	db    database.Database
+	repo  repositories.UserRepository
 	cache cache.Cache
 }
 
-func NewUserService(db database.Database, cache cache.Cache) UserService {
-	return &userService{db: db, cache: cache}
+func NewUserService(repo repositories.UserRepository, cache cache.Cache) UserService {
+	return &userService{repo: repo, cache: cache}
 }
 
 func (s *userService) Login(ctx context.Context, req models.LoginUser) (string, models.User, error) {
 	if req.Email == "" || req.Password == "" {
 		return "", models.User{}, ErrInvalid
 	}
-	var u models.User
+
 	cacheKey := fmt.Sprintf("user_login:%s", req.Email)
+	var u *models.User
+
+	// 尝试从缓存获取
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
-			_ = json.Unmarshal([]byte(cached), &u)
-			if u.HashedPassword != nil && u.IsActive && !u.IsDeleted() && u.AuthProvider == models.AuthProviderEmail {
-				if bcrypt.CompareHashAndPassword([]byte(*u.HashedPassword), []byte(req.Password)) == nil {
-					t, err := auth.GenerateToken(u.Email)
-					return t, u, err
+			var cachedUser models.User
+			if err := json.Unmarshal([]byte(cached), &cachedUser); err == nil {
+				if cachedUser.HashedPassword != nil && cachedUser.IsActive && !cachedUser.IsDeleted() && cachedUser.AuthProvider == models.AuthProviderEmail {
+					if bcrypt.CompareHashAndPassword([]byte(*cachedUser.HashedPassword), []byte(req.Password)) == nil {
+						t, err := auth.GenerateToken(cachedUser.Email)
+						return t, cachedUser, err
+					}
 				}
 			}
 		}
 	}
-	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL AND is_active = ?", req.Email, true).First(&u).Error(); err != nil {
+
+	// 从数据库查询
+	u, err := s.repo.FindActiveByEmail(ctx, req.Email)
+	if err != nil {
+		return "", models.User{}, ErrInternal
+	}
+	if u == nil {
 		// 防时序攻击
 		_ = bcrypt.CompareHashAndPassword([]byte(auth.GetDummyHash()), []byte(req.Password))
 		return "", models.User{}, ErrUnauthorized
 	}
+
+	// 验证密码
 	if u.HashedPassword == nil || bcrypt.CompareHashAndPassword([]byte(*u.HashedPassword), []byte(req.Password)) != nil {
 		return "", models.User{}, ErrUnauthorized
 	}
+
+	// 检查认证提供商
+	if u.AuthProvider != models.AuthProviderEmail {
+		return "", models.User{}, ErrUnauthorized
+	}
+
+	// 更新缓存
 	if s.cache != nil {
 		go func() {
-			if b, err := json.Marshal(u); err == nil {
+			if b, err := json.Marshal(*u); err == nil {
 				_ = s.cache.Set(ctx, cacheKey, b, 5*time.Minute).Err()
 			}
 		}()
 	}
+
+	// 生成JWT令牌
 	t, err := auth.GenerateToken(u.Email)
-	return t, u, err
+	return t, *u, err
 }
 
 func (s *userService) Register(ctx context.Context, req models.RegisterUser) (models.User, error) {
 	if req.Email == "" || req.Password == "" {
 		return models.User{}, ErrInvalid
 	}
-	var existing models.User
-	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", req.Email).First(&existing).Error(); err == nil {
+
+	// 检查邮箱是否已存在
+	exists, err := s.repo.EmailExists(ctx, req.Email)
+	if err != nil {
+		return models.User{}, ErrInternal
+	}
+	if exists {
 		return models.User{}, ErrConflict
 	}
+
+	// 加密密码
 	hash, err := auth.HashPassword(req.Password)
 	if err != nil {
 		return models.User{}, ErrInternal
 	}
+
+	// 设置默认值
 	platform := req.Platform
 	if platform == "" {
 		platform = models.PlatformWeb
@@ -88,10 +119,21 @@ func (s *userService) Register(ctx context.Context, req models.RegisterUser) (mo
 	if provider == "" {
 		provider = models.AuthProviderEmail
 	}
-	u := models.User{Email: req.Email, FullName: &req.FullName, HashedPassword: &hash, Platform: platform, AuthProvider: provider, IsActive: true}
-	if err := s.db.WithContext(ctx).Create(&u).Error; err != nil {
+
+	// 创建用户
+	u := models.User{
+		Email:          req.Email,
+		FullName:       &req.FullName,
+		HashedPassword: &hash,
+		Platform:       platform,
+		AuthProvider:   provider,
+		IsActive:       true,
+	}
+
+	if err := s.repo.Create(ctx, &u); err != nil {
 		return models.User{}, ErrInternal
 	}
+
 	return u, nil
 }
 
@@ -99,8 +141,11 @@ func (s *userService) List(ctx context.Context, offset, limit int) ([]models.Use
 	if offset < 0 || limit <= 0 || limit > 100 {
 		return nil, ErrInvalid
 	}
+
 	cacheKey := fmt.Sprintf("users:offset:%d:limit:%d", offset, limit)
 	var usersResp []models.UserResponse
+
+	// 尝试从缓存获取
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
 			if err := json.Unmarshal([]byte(cached), &usersResp); err == nil {
@@ -109,14 +154,20 @@ func (s *userService) List(ctx context.Context, offset, limit int) ([]models.Use
 			_ = s.cache.Del(ctx, cacheKey)
 		}
 	}
-	var users []models.User
-	if err := s.db.WithContext(ctx).Where("deleted_at IS NULL").Order("created_at DESC").Offset(offset).Limit(limit).Find(&users).Error; err != nil {
+
+	// 从数据库查询
+	users, err := s.repo.List(ctx, offset, limit)
+	if err != nil {
 		return nil, ErrInternal
 	}
+
+	// 转换为响应DTO
 	usersResp = make([]models.UserResponse, 0, len(users))
 	for _, u := range users {
 		usersResp = append(usersResp, u.ToResponse())
 	}
+
+	// 更新缓存
 	if s.cache != nil {
 		go func() {
 			if b, err := json.Marshal(usersResp); err == nil {
@@ -124,6 +175,7 @@ func (s *userService) List(ctx context.Context, offset, limit int) ([]models.Use
 			}
 		}()
 	}
+
 	return usersResp, nil
 }
 
@@ -132,69 +184,99 @@ func (s *userService) ThirdPartyLogin(ctx context.Context, req models.ThirdParty
 	if req.ProviderUserID == "" || req.AuthProvider == "" {
 		return "", models.User{}, ErrInvalid
 	}
+
 	cacheKey := fmt.Sprintf("third_party_user:%s:%s", req.AuthProvider, req.ProviderUserID)
-	var u models.User
+	var u *models.User
+
 	// 1) 缓存命中（非首次登录）
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
-			if err := json.Unmarshal([]byte(cached), &u); err == nil && u.IsActive && !u.IsDeleted() {
-				t, err := auth.GenerateToken(u.Email)
-				return t, u, err
+			var cachedUser models.User
+			if err := json.Unmarshal([]byte(cached), &cachedUser); err == nil && cachedUser.IsActive && !cachedUser.IsDeleted() {
+				t, err := auth.GenerateToken(cachedUser.Email)
+				return t, cachedUser, err
 			}
 			_ = s.cache.Del(ctx, cacheKey)
 		}
 	}
+
 	// 2) 数据库命中（非首次登录）
-	if err := s.db.WithContext(ctx).
-		Where("provider_user_id = ? AND auth_provider = ? AND deleted_at IS NULL AND is_active = ?", req.ProviderUserID, req.AuthProvider, true).
-		First(&u).Error(); err == nil {
+	u, err := s.repo.FindActiveByProviderUserID(ctx, req.ProviderUserID, req.AuthProvider)
+	if err != nil {
+		return "", models.User{}, ErrInternal
+	}
+	if u != nil {
 		// 命中直接返回
 		t, err := auth.GenerateToken(u.Email)
-		return t, u, err
+		return t, *u, err
 	}
+
 	// 3) 首次登录（需要 email 才能创建/绑定）
 	if req.Email == "" {
 		return "", models.User{}, ErrInvalid
 	}
+
 	// 尝试创建新用户
-	u = models.User{Email: req.Email, FullName: &req.FullName, Platform: req.Platform, AuthProvider: req.AuthProvider, ProviderUserID: &req.ProviderUserID, AvatarURL: &req.AvatarURL, IsActive: true}
-	if err := s.db.WithContext(ctx).Create(&u).Error; err != nil {
+	newUser := models.User{
+		Email:          req.Email,
+		FullName:       &req.FullName,
+		Platform:       req.Platform,
+		AuthProvider:   req.AuthProvider,
+		ProviderUserID: &req.ProviderUserID,
+		AvatarURL:      &req.AvatarURL,
+		IsActive:       true,
+	}
+
+	if err := s.repo.Create(ctx, &newUser); err != nil {
 		// 创建失败，尝试按 email 绑定已有账号（需要检查活跃状态）
-		var existing models.User
-		if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", req.Email).First(&existing).Error(); err == nil {
-			if !existing.IsActive || existing.IsDeleted() {
-				return "", models.User{}, ErrUnauthorized
-			}
-			update := models.User{ProviderUserID: &req.ProviderUserID, AuthProvider: req.AuthProvider}
-			if req.AvatarURL != "" {
-				update.AvatarURL = &req.AvatarURL
-			}
-			if err := s.db.WithContext(ctx).Model(&existing).Updates(update).Error; err != nil {
-				return "", models.User{}, ErrInternal
-			}
-			u = existing
-		} else {
+		existing, err := s.repo.FindByEmail(ctx, req.Email)
+		if err != nil {
 			return "", models.User{}, ErrInternal
 		}
+		if existing == nil {
+			return "", models.User{}, ErrInternal
+		}
+		if !existing.IsActive || existing.IsDeleted() {
+			return "", models.User{}, ErrUnauthorized
+		}
+
+		// 更新已有用户的第三方信息
+		existing.ProviderUserID = &req.ProviderUserID
+		existing.AuthProvider = req.AuthProvider
+		if req.AvatarURL != "" {
+			existing.AvatarURL = &req.AvatarURL
+		}
+
+		if err := s.repo.Update(ctx, existing); err != nil {
+			return "", models.User{}, ErrInternal
+		}
+		newUser = *existing
 	}
+
 	// 缓存并返回
 	if s.cache != nil {
-		if b, err := json.Marshal(u); err == nil {
+		if b, err := json.Marshal(newUser); err == nil {
 			_ = s.cache.Set(ctx, cacheKey, b, 10*time.Minute).Err()
 		}
 	}
-	t, err := auth.GenerateToken(u.Email)
-	return t, u, err
+
+	t, err := auth.GenerateToken(newUser.Email)
+	return t, newUser, err
 }
 
 func (s *userService) GetProfile(ctx context.Context, email string) (models.UserResponse, error) {
 	if email == "" {
 		return models.UserResponse{}, ErrInvalid
 	}
-	var u models.User
-	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
+
+	u, err := s.repo.FindByEmail(ctx, email)
+	if err != nil {
+		return models.UserResponse{}, ErrInternal
+	}
+	if u == nil {
 		return models.UserResponse{}, ErrNotFound
 	}
+
 	return u.ToResponse(), nil
 }
 
@@ -202,16 +284,30 @@ func (s *userService) UpdateProfile(ctx context.Context, email string, update mo
 	if email == "" {
 		return models.UserResponse{}, ErrInvalid
 	}
-	var u models.User
-	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
+
+	u, err := s.repo.FindByEmail(ctx, email)
+	if err != nil {
+		return models.UserResponse{}, ErrInternal
+	}
+	if u == nil {
 		return models.UserResponse{}, ErrNotFound
 	}
-	if err := s.db.WithContext(ctx).Model(&u).Updates(update).Error; err != nil {
+
+	// 更新字段
+	if update.FullName != nil {
+		u.FullName = update.FullName
+	}
+	if update.AvatarURL != nil {
+		u.AvatarURL = update.AvatarURL
+	}
+	if update.IsActive != nil {
+		u.IsActive = *update.IsActive
+	}
+
+	if err := s.repo.Update(ctx, u); err != nil {
 		return models.UserResponse{}, ErrInternal
 	}
-	if err := s.db.WithContext(ctx).Where("email = ?", email).First(&u).Error(); err != nil {
-		return models.UserResponse{}, ErrInternal
-	}
+
 	return u.ToResponse(), nil
 }
 
@@ -219,13 +315,18 @@ func (s *userService) SoftDelete(ctx context.Context, email string) error {
 	if email == "" {
 		return ErrInvalid
 	}
-	var u models.User
-	if err := s.db.WithContext(ctx).Where("email = ? AND deleted_at IS NULL", email).First(&u).Error(); err != nil {
-		return ErrNotFound
-	}
-	u.SoftDelete()
-	if err := s.db.WithContext(ctx).Model(&u).Updates(models.User{DeletedAt: u.DeletedAt}).Error; err != nil {
+
+	u, err := s.repo.FindByEmail(ctx, email)
+	if err != nil {
 		return ErrInternal
 	}
+	if u == nil {
+		return ErrNotFound
+	}
+
+	if err := s.repo.SoftDelete(ctx, u); err != nil {
+		return ErrInternal
+	}
+
 	return nil
 }

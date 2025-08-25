@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"golang-rest-api-template/pkg/cache"
-	"golang-rest-api-template/pkg/database"
 	"golang-rest-api-template/pkg/models"
+	"golang-rest-api-template/pkg/repositories"
 	"strconv"
 	"time"
 )
@@ -19,12 +19,12 @@ type BookService interface {
 }
 
 type bookService struct {
-	db    database.Database
+	repo  repositories.BookRepository
 	cache cache.Cache
 }
 
-func NewBookService(db database.Database, cache cache.Cache) BookService {
-	return &bookService{db: db, cache: cache}
+func NewBookService(repo repositories.BookRepository, cache cache.Cache) BookService {
+	return &bookService{repo: repo, cache: cache}
 }
 
 func (s *bookService) ListBooks(ctx context.Context, offset, limit int) ([]models.Book, error) {
@@ -39,8 +39,12 @@ func (s *bookService) ListBooks(ctx context.Context, offset, limit int) ([]model
 		}
 	}
 
-	// 使用请求上下文，确保取消/超时可控
-	s.db.WithContext(ctx).Offset(offset).Limit(limit).Find(&books)
+	// 使用Repository查询
+	books, err := s.repo.List(ctx, offset, limit)
+	if err != nil {
+		return nil, ErrInternal
+	}
+
 	if s.cache != nil {
 		if b, err := json.Marshal(books); err == nil {
 			_ = s.cache.Set(ctx, cacheKey, b, time.Minute).Err()
@@ -51,7 +55,10 @@ func (s *bookService) ListBooks(ctx context.Context, offset, limit int) ([]model
 
 func (s *bookService) CreateBook(ctx context.Context, input models.CreateBook) (models.Book, error) {
 	book := models.Book{Title: input.Title, Author: input.Author}
-	s.db.WithContext(ctx).Create(&book)
+	if err := s.repo.Create(ctx, &book); err != nil {
+		return models.Book{}, ErrInternal
+	}
+
 	// invalidate list caches
 	if s.cache != nil {
 		if keys, err := s.cache.Keys(ctx, "books_offset_*").Result(); err == nil {
@@ -64,28 +71,53 @@ func (s *bookService) CreateBook(ctx context.Context, input models.CreateBook) (
 }
 
 func (s *bookService) GetBook(ctx context.Context, id string) (models.Book, error) {
-	var book models.Book
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&book).Error(); err != nil {
+	book, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return models.Book{}, ErrInternal
+	}
+	if book == nil {
 		return models.Book{}, ErrNotFound
 	}
-	return book, nil
+	return *book, nil
 }
 
 func (s *bookService) UpdateBook(ctx context.Context, id string, input models.UpdateBook) (models.Book, error) {
-	var book models.Book
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&book).Error(); err != nil {
+	book, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return models.Book{}, ErrInternal
+	}
+	if book == nil {
 		return models.Book{}, ErrNotFound
 	}
-	s.db.WithContext(ctx).Model(&book).Updates(models.Book{Title: input.Title, Author: input.Author})
-	return book, nil
+
+	// 更新字段
+	if input.Title != "" {
+		book.Title = input.Title
+	}
+	if input.Author != "" {
+		book.Author = input.Author
+	}
+
+	if err := s.repo.Update(ctx, book); err != nil {
+		return models.Book{}, ErrInternal
+	}
+
+	return *book, nil
 }
 
 func (s *bookService) DeleteBook(ctx context.Context, id string) error {
-	var book models.Book
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&book).Error(); err != nil {
+	book, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return ErrInternal
+	}
+	if book == nil {
 		return ErrNotFound
 	}
-	s.db.WithContext(ctx).Delete(&book)
+
+	if err := s.repo.Delete(ctx, book); err != nil {
+		return ErrInternal
+	}
+
 	return nil
 }
 

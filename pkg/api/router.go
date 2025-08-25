@@ -4,7 +4,10 @@ import (
 	"context"
 	"golang-rest-api-template/pkg/cache"
 	"golang-rest-api-template/pkg/database"
+	"golang-rest-api-template/pkg/handlers"
 	"golang-rest-api-template/pkg/middleware"
+	"golang-rest-api-template/pkg/repositories"
+	"golang-rest-api-template/pkg/services"
 	"time"
 
 	docs "golang-rest-api-template/docs"
@@ -30,8 +33,17 @@ func MongoStatusMiddleware(mongoCollection *mongo.Collection) gin.HandlerFunc {
 }
 
 func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db database.Database, redisClient cache.Cache, ctx *context.Context, requestTimeoutMs int, rateLimitRequests int, rateLimitWindow int) *gin.Engine {
-	bookRepository := NewBookRepository(db, redisClient, ctx)
-	userRepository := NewUserRepository(db, redisClient, ctx)
+	// 创建 Repository 层
+	bookRepo := repositories.NewBookRepository(db)
+	userRepo := repositories.NewUserRepository(db)
+
+	// 创建服务层
+	bookService := services.NewBookService(bookRepo, redisClient)
+	userService := services.NewUserService(userRepo, redisClient)
+
+	// 创建Handler层
+	bookHandler := handlers.NewBookHandler(bookService)
+	userHandler := handlers.NewUserHandler(userService)
 
 	r := gin.New()
 	// 统一错误处理中间件要尽早注册
@@ -63,25 +75,41 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 	docs.SwaggerInfo.BasePath = "/api/v1"
 	v1 := r.Group("/api/v1")
 	{
-		v1.GET("/", bookRepository.Healthcheck)
-		v1.GET("/books", middleware.APIKeyAuth(), bookRepository.FindBooks)
-		v1.POST("/books", middleware.APIKeyAuth(), middleware.JWTAuth(), bookRepository.CreateBook)
-		v1.GET("/books/:id", middleware.APIKeyAuth(), bookRepository.FindBook)
-		v1.PUT("/books/:id", middleware.APIKeyAuth(), bookRepository.UpdateBook)
-		v1.DELETE("/books/:id", middleware.APIKeyAuth(), bookRepository.DeleteBook)
+		// 健康检查
+		v1.GET("/", bookHandler.Healthcheck)
 
-		// 用户管理路由
-		v1.GET("/users", middleware.APIKeyAuth(), userRepository.FindUsers)
+		// 图书管理路由 - 使用新的Handler层
+		books := v1.Group("/books")
+		{
+			books.GET("", middleware.APIKeyAuth(), bookHandler.ListBooks)
+			books.POST("", middleware.APIKeyAuth(), middleware.JWTAuth(), bookHandler.CreateBook)
+			books.GET("/:id", middleware.APIKeyAuth(), bookHandler.GetBook)
+			books.PUT("/:id", middleware.APIKeyAuth(), bookHandler.UpdateBook)
+			books.DELETE("/:id", middleware.APIKeyAuth(), bookHandler.DeleteBook)
+		}
 
-		// 认证路由
-		v1.POST("/login", middleware.APIKeyAuth(), userRepository.LoginHandler)
-		v1.POST("/register", middleware.APIKeyAuth(), userRepository.RegisterHandler)
-		v1.POST("/auth/third-party", middleware.APIKeyAuth(), userRepository.ThirdPartyLoginHandler)
+		// 用户管理路由 - 使用新的Handler层
+		users := v1.Group("/users")
+		{
+			users.GET("", middleware.APIKeyAuth(), userHandler.ListUsers)
+		}
 
-		// 用户个人资料路由（需要JWT认证）
-		v1.GET("/profile", middleware.APIKeyAuth(), middleware.JWTAuth(), userRepository.GetUserProfile)
-		v1.PUT("/profile", middleware.APIKeyAuth(), middleware.JWTAuth(), userRepository.UpdateUserProfile)
-		v1.DELETE("/profile", middleware.APIKeyAuth(), middleware.JWTAuth(), userRepository.SoftDeleteUser)
+		// 认证路由 - 使用新的Handler层
+		auth := v1.Group("/auth")
+		{
+			auth.POST("/login", middleware.APIKeyAuth(), userHandler.Login)
+			auth.POST("/register", middleware.APIKeyAuth(), userHandler.Register)
+			auth.POST("/third-party", middleware.APIKeyAuth(), userHandler.ThirdPartyLogin)
+		}
+
+		// 用户个人资料路由 - 使用新的Handler层（需要JWT认证）
+		profile := v1.Group("/profile")
+		profile.Use(middleware.APIKeyAuth(), middleware.JWTAuth())
+		{
+			profile.GET("", userHandler.GetProfile)
+			profile.PUT("", userHandler.UpdateProfile)
+			profile.DELETE("", userHandler.SoftDelete)
+		}
 	}
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerfiles.Handler))
 
