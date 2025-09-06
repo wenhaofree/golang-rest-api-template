@@ -55,7 +55,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	}
 
 	// 3. 调用服务
-	token, user, err := h.service.Login(c.Request.Context(), req.ToLoginModel())
+	token, refreshToken, user, err := h.service.Login(c.Request.Context(), req.ToLoginModel())
 	if err != nil {
 		// 根据service错误类型映射到适当的HTTP错误
 		switch err {
@@ -71,8 +71,9 @@ func (h *UserHandler) Login(c *gin.Context) {
 
 	// 4. 返回响应
 	loginResp := dto.LoginResponse{
-		Token: token,
-		User:  dto.UserResponse{}.FromUser(user),
+		Token:        token,
+		RefreshToken: refreshToken,
+		User:         dto.UserResponse{}.FromUser(user),
 	}
 	response.Success(c, loginResp)
 }
@@ -153,7 +154,7 @@ func (h *UserHandler) ThirdPartyLogin(c *gin.Context) {
 	}
 
 	// 3. 调用服务
-	token, user, err := h.service.ThirdPartyLogin(c.Request.Context(), req.ToThirdPartyLoginModel())
+	token, refreshToken, user, err := h.service.ThirdPartyLogin(c.Request.Context(), req.ToThirdPartyLoginModel())
 	if err != nil {
 		if err == services.ErrInvalid {
 			c.Error(apperrors.ErrBadRequest)
@@ -165,8 +166,9 @@ func (h *UserHandler) ThirdPartyLogin(c *gin.Context) {
 
 	// 4. 返回响应
 	loginResp := dto.LoginResponse{
-		Token: token,
-		User:  dto.UserResponse{}.FromUser(user),
+		Token:        token,
+		RefreshToken: refreshToken,
+		User:         dto.UserResponse{}.FromUser(user),
 	}
 	response.Success(c, loginResp)
 }
@@ -330,6 +332,49 @@ func (h *UserHandler) SoftDelete(c *gin.Context) {
 
 	// 3. 返回响应
 	response.SuccessWithMessage(c, nil, "Account deleted successfully")
+}
+
+// RefreshToken godoc
+// @Summary Refresh access token
+// @Description Use a valid refresh token to generate new access and refresh tokens
+// @Tags auth
+// @Security ApiKeyAuth
+// @Accept  json
+// @Produce  json
+// @Param   refresh     body    dto.RefreshTokenRequest     true        "Refresh token object"
+// @Success 200 {object} dto.RefreshTokenResponse "New tokens generated successfully"
+// @Failure 400 {object} response.ErrorEnvelope "Bad Request"
+// @Failure 401 {object} response.ErrorEnvelope "Unauthorized - Invalid refresh token"
+// @Failure 500 {object} response.ErrorEnvelope "Internal Server Error"
+// @Router /auth/refresh-token [post]
+func (h *UserHandler) RefreshToken(c *gin.Context) {
+	// 1. 解析请求体
+	var req dto.RefreshTokenRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		response.BadRequest(c, "Invalid request format")
+		return
+	}
+
+	// 2. 调用服务
+	newToken, newRefreshToken, err := h.service.RefreshToken(c.Request.Context(), req.RefreshToken)
+	if err != nil {
+		switch err {
+		case services.ErrInvalid:
+			c.Error(apperrors.ErrBadRequest)
+		case services.ErrUnauthorized:
+			c.Error(apperrors.ErrUnauthorized)
+		default:
+			c.Error(apperrors.ErrInternal)
+		}
+		return
+	}
+
+	// 3. 返回响应
+	refreshResp := dto.RefreshTokenResponse{
+		Token:        newToken,
+		RefreshToken: newRefreshToken,
+	}
+	response.SuccessWithMessage(c, refreshResp, "Tokens refreshed successfully")
 }
 
 // 辅助方法

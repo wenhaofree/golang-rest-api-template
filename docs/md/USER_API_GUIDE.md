@@ -97,6 +97,7 @@ type User struct {
   "code": 0,
   "data": {
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "user": {
       "id": "123e4567-e89b-12d3-a456-426614174000",
       "email": "user@example.com",
@@ -137,6 +138,7 @@ type User struct {
   "code": 0,
   "data": {
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
     "user": {
       "id": "123e4567-e89b-12d3-a456-426614174000",
       "email": "user@privaterelay.appleid.com",
@@ -154,7 +156,39 @@ type User struct {
 }
 ```
 
-### 4. 获取用户资料
+### 4. 刷新访问令牌
+
+**POST** `/api/v1/auth/refresh-token`
+
+**Headers:**
+- `X-API-Key: <API_KEY>`
+
+**请求体:**
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**响应:**
+```json
+{
+  "code": 0,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  },
+  "message": "Tokens refreshed successfully"
+}
+```
+
+**说明:**
+- 使用有效的 refresh token 获取新的访问令牌和刷新令牌
+- 旧的 refresh token 在成功刷新后会被立即撤销
+- 新的 refresh token 有效期为7天（可配置）
+- 访问令牌有效期为24小时（可配置）
+
+### 5. 获取用户资料
 
 **GET** `/api/v1/profile`
 
@@ -182,7 +216,7 @@ type User struct {
 }
 ```
 
-### 5. 更新用户资料
+### 6. 更新用户资料
 
 **PUT** `/api/v1/profile`
 
@@ -197,7 +231,7 @@ type User struct {
 }
 ```
 
-### 6. 逻辑删除用户
+### 7. 逻辑删除用户
 
 **DELETE** `/api/v1/profile`
 
@@ -214,7 +248,7 @@ type User struct {
 }
 ```
 
-### 7. 获取用户列表
+### 8. 获取用户列表
 
 **GET** `/api/v1/users?offset=0&limit=10`
 
@@ -222,6 +256,66 @@ type User struct {
 - `X-API-Key: <API_KEY>`
 
 ## 特性说明
+
+### JWT 双令牌认证系统
+本API采用JWT双令牌认证机制：
+
+- **访问令牌 (Access Token)**: 用于API访问认证，短期有效（默认24小时）
+- **刷新令牌 (Refresh Token)**: 用于刷新访问令牌，长期有效（默认7天）
+
+#### 令牌使用流程
+1. 用户登录后获得访问令牌和刷新令牌
+2. 使用访问令牌调用需要认证的API
+3. 当访问令牌过期时，使用刷新令牌获取新的令牌对
+4. 客户端应自动处理令牌刷新，保持用户登录状态
+
+#### 令牌刷新最佳实践
+```javascript
+// 示例：JavaScript中的自动令牌刷新
+async function apiCall(url, options = {}) {
+  let token = localStorage.getItem('access_token');
+  
+  // 添加认证头
+  const headers = {
+    'X-API-Key': 'your-api-key',
+    'Authorization': `Bearer ${token}`,
+    ...options.headers
+  };
+  
+  let response = await fetch(url, { ...options, headers });
+  
+  // 如果令牌过期，尝试刷新
+  if (response.status === 401) {
+    const refreshToken = localStorage.getItem('refresh_token');
+    if (refreshToken) {
+      const refreshResponse = await fetch('/api/v1/auth/refresh-token', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-API-Key': 'your-api-key'
+        },
+        body: JSON.stringify({ refresh_token: refreshToken })
+      });
+      
+      if (refreshResponse.ok) {
+        const data = await refreshResponse.json();
+        localStorage.setItem('access_token', data.data.token);
+        localStorage.setItem('refresh_token', data.data.refresh_token);
+        
+        // 重新发起原请求
+        headers['Authorization'] = `Bearer ${data.data.token}`;
+        response = await fetch(url, { ...options, headers });
+      } else {
+        // 刷新失败，跳转到登录页
+        window.location.href = '/login';
+        return;
+      }
+    }
+  }
+  
+  return response;
+}
+```
 
 ### 逻辑删除
 - 用户删除采用逻辑删除方式，设置 `deleted_at` 字段
@@ -236,10 +330,28 @@ type User struct {
 5. 返回JWT token和用户信息
 
 ### 安全考虑
-- 密码使用bcrypt加密存储
-- JWT token用于身份验证
-- API Key用于接口访问控制
-- 第三方登录需要验证provider token（待实现）
+- **密码安全**: 使用bcrypt加密存储，支持可配置的成本参数
+- **双令牌认证**: JWT访问令牌 + 刷新令牌机制，提供更好的安全性
+- **令牌轮换**: 刷新令牌使用时会自动轮换，旧令牌立即失效
+- **API访问控制**: 所有接口都需要API Key进行访问控制
+- **令牌缓存管理**: 刷新令牌存储在Redis中，支持主动撤销
+- **用户状态验证**: 令牌刷新时会验证用户仍然处于活跃状态
+- **防时序攻击**: 登录验证时使用dummy hash防止时序攻击
+- **第三方登录**: 需要验证provider token（待实现具体验证逻辑）
+
+### 环境变量配置
+```bash
+# JWT配置
+JWT_SECRET_KEY=your-jwt-secret-key
+JWT_EXPIRY_DURATION=24h                    # 访问令牌有效期（默认24小时）
+REFRESH_TOKEN_EXPIRY_DURATION=7d           # 刷新令牌有效期（默认7天）
+
+# bcrypt配置
+BCRYPT_COST=12                             # bcrypt加密强度（4-15，默认12）
+
+# API安全
+API_SECRET_KEY=your-api-secret-key
+```
 
 ## 数据库迁移
 

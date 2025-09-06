@@ -1,103 +1,157 @@
 # CLAUDE.md
 
-
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
-## Code Architecture
 
-- Hard criteria for writing code, including the following principles:
+## Code Architecture Standards
 
-(1) For dynamic languages such as Python, JavaScript, and TypeScript, strive to ensure that each code file does not exceed 200 lines.
+### File Size Constraints
+- **Go files**: Maximum 250 lines per file
+- **Directory structure**: Maximum 8 files per folder level (use subfolders if exceeded)
 
-(2) For static languages such as Java, Go, and Rust, strive to ensure that each code file does not exceed 250 lines.
+### Code Quality Standards
+Avoid these anti-patterns:
+1. **Rigidity** - Code difficult to change without cascading modifications
+2. **Redundancy** - Repeated code logic across multiple locations  
+3. **Circular Dependencies** - Intertwined modules creating maintenance complexity
+4. **Fragility** - Changes breaking seemingly unrelated parts
+5. **Obscurity** - Unclear intent and chaotic structure
+6. **Data Clumps** - Related data items that should be grouped into objects
+7. **Unnecessary Complexity** - Over-engineering simple solutions
 
-(3) For files in each folder level, strive to not exceed 8. If there are more, they need to be planned as multi-level subfolders.
-
-- In addition to the hard criteria, it is also necessary to always pay attention to elegant architecture design and avoid the following "bad smells" that may erode the quality of our code:
-
-(1) Rigidity: The system is difficult to change, and any minor modification can trigger a series of cascading modifications.
-
-(2) Redundancy: The same code logic appears repeatedly in multiple places, making maintenance difficult and prone to inconsistencies.
-
-(3) Circular Dependency: Two or more modules are intertwined, forming an inextricable "knot," making it difficult to test and reuse.
-
-(4) Fragility: A modification to one part of the code leads to unexpected damage to other seemingly unrelated parts of the system.
-
-(5) Obscurity: The code intent is unclear, the structure is chaotic, making it difficult for readers to understand its functionality and design.
-
-(6) Data Clump: Multiple data items always appear together in the parameters of different methods, suggesting that they should be combined into an independent object.
-
-(7) Unnecessary Complexity: Using a "saber" to solve a "chicken" problem, overdesign makes the system bulky and difficult to understand.
-
-- 【Very Important!!】Whether you are writing code yourself, reading, or reviewing others' code, strictly adhere to the above hard criteria and always pay attention to elegant architecture design.
-
-- 【Very Important!!】At any time, once you identify those "bad smells" that may erode the quality of our code, you should immediately ask the user whether optimization is needed and provide reasonable optimization suggestions.
+**Critical**: Always identify and suggest optimization for code smells when encountered.
 
 ## Common Commands
 
-### Development
-- `make setup` - Initialize Swagger documentation and install dependencies
+### Development Workflow
+- `make setup` - Initialize Swagger docs and install dependencies
 - `make build` - Build the Go application
 - `make test` - Run all tests with race detection and coverage
-- `make run-local` - Run the application locally with Docker dependencies
-- `make up` - Start all services with Docker Compose
-- `make down` - Stop all Docker Compose services
+- `go test ./pkg/{package} -v` - Run tests for specific package
+- `make run-env` - Start with .env file configuration (recommended)
+- `make run-dev` - Start in development mode
+- `make run-local` - Run locally with individual Docker containers
+- `make run-local-no-mongo` - Run locally without MongoDB logging
+
+### Environment-Specific Startup
+- `make run-dev` - Development environment with debug mode
+- `make run-prod` - Production environment with release mode  
+- `make run-test` - Test environment configuration
 
 ### Docker Operations
+- `make up` - Start all services with Docker Compose
+- `make up-no-mongo` - Start services without MongoDB
+- `make down` - Stop all Docker Compose services
 - `make build-docker` - Build Docker images without cache
 - `make restart` - Restart Docker Compose services
-- `make clean` - Clean up Docker containers and images
+- `make clean` - Clean up containers and images
 
-### Testing
-- `go test ./... -v` - Run verbose tests
-- `go test ./pkg/api -v` - Run tests for specific package
-- E2E tests: `cd tests && python e2e.py` (requires Python environment setup)
+### Performance & Testing
+- `make test-performance` - Run login API performance tests
+- `make test-login` - Simple login endpoint test
+- `make test-api-flow` - Complete API test workflow (login → profile → books)
+- `make test-all-performance` - Complete performance test suite
+- `make debug-jwt TOKEN=<token>` - Debug JWT tokens
+- `make db-optimize DB_URL=<url>` - Add database performance indexes
 
 ## Architecture Overview
 
-This is a Go REST API template using the Gin web framework with a layered architecture:
+This Go REST API uses Clean Architecture with clear separation of concerns across layers.
 
-### Core Structure
-- **cmd/server/main.go** - Application entry point with Swagger annotations
-- **pkg/api/** - HTTP handlers and routing logic
-  - `router.go` - Main router setup with middleware chain
-  - `books.go` - Book CRUD operations
-  - `user.go` - User authentication handlers
-- **pkg/models/** - Data models (Book, User)
-- **pkg/database/** - Database abstraction layer using GORM
-- **pkg/cache/** - Redis caching layer
-- **pkg/auth/** - JWT authentication utilities
-- **pkg/middleware/** - HTTP middleware (CORS, rate limiting, security, XSS protection)
+### Layered Architecture Flow
+```
+HTTP Request → Handler → Service → Repository → Database
+                ↓         ↓         ↓
+               DTO ←→ Models ←→ GORM Models
+```
 
-### Key Technologies
-- **Web Framework**: Gin Gonic
-- **ORM**: GORM with PostgreSQL
-- **Cache**: Redis
-- **Logging**: MongoDB + Zap logger
-- **Authentication**: JWT tokens
-- **Documentation**: Swagger/OpenAPI
-- **Testing**: Go testing with mocks
+### Core Components
 
-### Database Layer
-The application uses a repository pattern with interfaces for testability:
-- `Database` interface in `pkg/database/db.go` wraps GORM operations
-- `GormDatabase` struct implements the interface
-- Models are defined in `pkg/models/` with GORM tags
+**Application Entry**: `cmd/server/main.go`
+- Centralized configuration loading via `pkg/config/config.go`
+- Service initialization and dependency injection
+- Swagger documentation setup
+
+**Handler Layer**: `pkg/handlers/`
+- HTTP request/response handling
+- Input validation using `pkg/validators/`
+- DTO transformation via `pkg/dto/`
+- Standardized responses through `pkg/response/`
+
+**Service Layer**: `pkg/services/`
+- Business logic implementation
+- Cross-cutting concerns (caching, error handling)
+- Transaction management
+
+**Repository Layer**: `pkg/repositories/`
+- Data access abstraction
+- Database operations using GORM
+- Query optimization and indexing
+
+**Infrastructure**: 
+- `pkg/database/` - PostgreSQL with GORM, MongoDB for logging
+- `pkg/cache/` - Redis caching with interfaces for testability
+- `pkg/middleware/` - Authentication, CORS, rate limiting, logging, security
+- `pkg/auth/` - JWT token management
+
+### Configuration System
+Uses hierarchical configuration loading:
+1. `.env` (base configuration)
+2. `.env.{environment}` (environment-specific)
+3. `.env.local` (local overrides)
+4. Environment variables (highest priority)
+
+Key configuration areas:
+- **Database**: Connection pooling, timeouts, retry logic
+- **Redis**: Connection pooling, timeout configuration  
+- **Rate Limiting**: Configurable requests/window
+- **Logging**: MongoDB optional, structured logging with Zap
+- **Authentication**: JWT secrets, API keys
 
 ### API Structure
-- Base path: `/api/v1`
-- All endpoints require API key authentication (`X-API-Key` header)
-- Protected endpoints also require JWT token (`Authorization: Bearer <token>`)
-- Rate limiting: 60 requests per minute
-- Swagger UI available at `/swagger/index.html`
+- **Base Path**: `/api/v1`
+- **Authentication**: API key (`X-API-Key`) + JWT tokens (`Authorization: Bearer`)
+- **Rate Limiting**: Configurable (default: 60 req/min)
+- **Documentation**: Swagger UI at `/swagger/index.html`
 
-### Environment Configuration
-Required environment variables:
-- `POSTGRES_HOST`, `POSTGRES_DB`, `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_PORT`
-- `JWT_SECRET_KEY`, `API_SECRET_KEY`
-- `REDIS_HOST`
+### Middleware Chain (Order Matters)
+1. Error handling
+2. Request context logger  
+3. MongoDB status injection
+4. Request timeout
+5. Performance monitoring
+6. Request size limiting
+7. Structured logging
+8. Security headers (production only)
+9. XSS protection (production only)
+10. CORS
+11. Rate limiting
 
 ### Testing Strategy
-- Unit tests for each package with `_test.go` files
-- Mock interfaces generated with `golang/mock`
-- E2E tests in Python using pytest
-- Test commands include race detection and coverage reporting
+- **Unit Tests**: Each package with `_test.go` files
+- **Mocking**: Interfaces with `golang/mock` generated mocks
+- **Performance**: Dedicated scripts in `scripts/` directory
+- **E2E**: Python-based tests with pytest
+- **Coverage**: Built into `make test` command
+
+### Environment Variables
+**Required**:
+- `POSTGRES_*` - Database connection
+- `JWT_SECRET_KEY`, `API_SECRET_KEY` - Authentication
+- `REDIS_HOST` - Caching
+
+**Optional**:
+- `MONGO_ENABLED` - Enable/disable MongoDB logging (default: true)
+- `RATE_LIMIT_*` - Rate limiting configuration
+- `REQUEST_TIMEOUT_MS` - Global request timeout
+
+### Development Patterns
+
+**Error Handling**: Centralized error handling middleware with custom error types in `pkg/apperrors/`
+
+**Validation**: Input validation at handler layer using dedicated validators
+
+**Caching**: Redis-based caching in service layer with cache invalidation strategies
+
+**Logging**: Structured logging with request tracing and optional MongoDB persistence
+
+**Security**: Multiple layers including rate limiting, request size limits, XSS protection, and security headers

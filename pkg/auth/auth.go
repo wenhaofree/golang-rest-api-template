@@ -18,6 +18,13 @@ type Claims struct {
 	jwt.StandardClaims
 }
 
+// RefreshClaims struct for refresh tokens
+type RefreshClaims struct {
+	Username string `json:"username"`
+	TokenID  string `json:"token_id"`
+	jwt.StandardClaims
+}
+
 var JwtKey = []byte(os.Getenv("JWT_SECRET_KEY"))
 
 // getBcryptCost 获取bcrypt cost配置，默认为12
@@ -133,4 +140,87 @@ func GenerateRandomKey() string {
 	}
 
 	return base64.StdEncoding.EncodeToString(key)
+}
+
+// getRefreshTokenExpiryDuration 获取refresh token有效期配置
+func getRefreshTokenExpiryDuration() time.Duration {
+	durationStr := os.Getenv("REFRESH_TOKEN_EXPIRY_DURATION")
+	if durationStr == "" {
+		return 7 * 24 * time.Hour // 默认7天
+	}
+
+	duration, err := parseDuration(durationStr)
+	if err != nil {
+		// 如果解析失败，使用默认值7天
+		return 7 * 24 * time.Hour
+	}
+
+	// 限制最小值为1天，最大值为30天
+	if duration < 24*time.Hour {
+		return 24 * time.Hour
+	}
+	if duration > 30*24*time.Hour {
+		return 30 * 24 * time.Hour
+	}
+
+	return duration
+}
+
+// GenerateRefreshToken 生成refresh token
+func GenerateRefreshToken(username string) (string, string, error) {
+	// 生成唯一的token ID
+	tokenID := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%d", username, time.Now().UnixNano())))
+	
+	// 获取可配置的过期时间
+	expiryDuration := getRefreshTokenExpiryDuration()
+	expirationTime := time.Now().Add(expiryDuration).Unix()
+
+	// Create the refresh token claims
+	claims := &RefreshClaims{
+		Username: username,
+		TokenID:  tokenID,
+		StandardClaims: jwt.StandardClaims{
+			ExpiresAt: expirationTime,
+			Issuer:    "refresh",
+			Subject:   username,
+		},
+	}
+
+	// Declare the token with the algorithm used for signing, and the claims
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	// Create the refresh token string
+	tokenString, err := token.SignedString(JwtKey)
+	if err != nil {
+		return "", "", err
+	}
+
+	return tokenString, tokenID, nil
+}
+
+// ValidateRefreshToken 验证refresh token并返回用户信息
+func ValidateRefreshToken(tokenString string) (string, string, error) {
+	claims := &RefreshClaims{}
+
+	token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return JwtKey, nil
+	})
+
+	if err != nil {
+		return "", "", err
+	}
+
+	if !token.Valid {
+		return "", "", fmt.Errorf("invalid refresh token")
+	}
+
+	// 检查是否是refresh token类型
+	if claims.Issuer != "refresh" {
+		return "", "", fmt.Errorf("not a refresh token")
+	}
+
+	return claims.Username, claims.TokenID, nil
 }

@@ -63,13 +63,25 @@ type UserResponse struct {
 
 // LoginResponse 登录响应DTO
 type LoginResponse struct {
-	Token string       `json:"token"`
-	User  UserResponse `json:"user"`
+	Token        string       `json:"token"`
+	RefreshToken string       `json:"refresh_token"`
+	User         UserResponse `json:"user"`
 }
 
 // RegisterResponse 注册响应DTO
 type RegisterResponse struct {
 	User UserResponse `json:"user"`
+}
+
+// RefreshTokenRequest 刷新令牌请求DTO
+type RefreshTokenRequest struct {
+	RefreshToken string `json:"refresh_token" binding:"required"`
+}
+
+// RefreshTokenResponse 刷新令牌响应DTO
+type RefreshTokenResponse struct {
+	Token        string `json:"token"`
+	RefreshToken string `json:"refresh_token"`
 }
 
 // 转换方法

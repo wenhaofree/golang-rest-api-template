@@ -100,6 +100,7 @@ func NewRouter(logger *zap.Logger, mongoCollection *mongo.Collection, db databas
 			auth.POST("/login", middleware.APIKeyAuth(), userHandler.Login)
 			auth.POST("/register", middleware.APIKeyAuth(), userHandler.Register)
 			auth.POST("/third-party", middleware.APIKeyAuth(), userHandler.ThirdPartyLogin)
+			auth.POST("/refresh-token", middleware.APIKeyAuth(), userHandler.RefreshToken)
 		}
 
 		// 用户个人资料路由 - 使用新的Handler层（需要JWT认证）
