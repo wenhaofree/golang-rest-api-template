@@ -22,6 +22,7 @@ type UserService interface {
 	UpdateProfile(ctx context.Context, email string, update models.UpdateUser) (models.UserResponse, error)
 	SoftDelete(ctx context.Context, email string) error
 	RefreshToken(ctx context.Context, refreshToken string) (string, string, error)
+	UpdateLastLogin(ctx context.Context, email string) error
 }
 
 type userService struct {
@@ -458,4 +459,29 @@ func (s *userService) RefreshToken(ctx context.Context, refreshToken string) (st
 	}
 
 	return newToken, newRefreshToken, nil
+}
+
+// UpdateLastLogin 更新用户最后登录时间
+func (s *userService) UpdateLastLogin(ctx context.Context, email string) error {
+	if email == "" {
+		return ErrInvalid
+	}
+
+	user, err := s.repo.FindByEmail(ctx, email)
+	if err != nil {
+		return ErrInternal
+	}
+	if user == nil {
+		return ErrNotFound
+	}
+
+	// 更新最后登录时间
+	now := time.Now()
+	user.LastLogin = &now
+	
+	if err := s.repo.Update(ctx, user); err != nil {
+		return ErrInternal
+	}
+
+	return nil
 }

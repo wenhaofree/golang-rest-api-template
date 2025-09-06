@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"fmt"
 	"golang-rest-api-template/pkg/apperrors"
 	"golang-rest-api-template/pkg/dto"
 	"golang-rest-api-template/pkg/response"
@@ -75,6 +77,18 @@ func (h *UserHandler) Login(c *gin.Context) {
 		RefreshToken: refreshToken,
 		User:         dto.UserResponse{}.FromUser(user),
 	}
+	
+	// 5. 异步更新最后登录时间
+	go func() {
+		// 创建一个新的context，避免原请求取消影响更新操作
+		updateCtx := context.Background()
+		if err := h.service.UpdateLastLogin(updateCtx, user.Email); err != nil {
+			// 记录错误但不影响登录响应
+			// 可以考虑使用结构化日志替换fmt.Printf
+			fmt.Printf("Failed to update last login time for user %s: %v\n", user.Email, err)
+		}
+	}()
+	
 	response.Success(c, loginResp)
 }
 
@@ -170,6 +184,17 @@ func (h *UserHandler) ThirdPartyLogin(c *gin.Context) {
 		RefreshToken: refreshToken,
 		User:         dto.UserResponse{}.FromUser(user),
 	}
+	
+	// 5. 异步更新最后登录时间
+	go func() {
+		// 创建一个新的context，避免原请求取消影响更新操作
+		updateCtx := context.Background()
+		if err := h.service.UpdateLastLogin(updateCtx, user.Email); err != nil {
+			// 记录错误但不影响登录响应
+			fmt.Printf("Failed to update last login time for user %s: %v\n", user.Email, err)
+		}
+	}()
+	
 	response.Success(c, loginResp)
 }
 
