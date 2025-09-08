@@ -229,9 +229,9 @@ func (v *UserValidator) validateFullName(fullName string) error {
 		return apperrors.New("FULL_NAME_TOO_LONG", "Full name cannot exceed 100 characters", 400)
 	}
 
-	if !nameRegex.MatchString(fullName) {
-		return apperrors.New("INVALID_FULL_NAME", "Full name contains invalid characters", 400)
-	}
+	// if !nameRegex.MatchString(fullName) {
+	// 	return apperrors.New("INVALID_FULL_NAME", "Full name contains invalid characters", 400)
+	// }
 
 	return nil
 }
