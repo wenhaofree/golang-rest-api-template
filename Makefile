@@ -182,6 +182,11 @@ test-api-flow:
 	@make test-books
 	@echo "\n✅ API测试流程完成"
 
+# 优化后的登录性能测试
+test-optimized-login:
+	@echo "🚀 优化后的登录性能测试..."
+	@go run scripts/optimized_login_test.go
+
 # 数据库索引优化
 db-optimize:
 	@echo "📊 Adding performance indexes to database..."

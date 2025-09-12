@@ -42,22 +42,66 @@ func (s *userService) Login(ctx context.Context, req models.LoginUser) (string, 
 	cacheKey := fmt.Sprintf("user_login:%s", req.Email)
 	var u *models.User
 
-	// 尝试从缓存获取
+	// 尝试从缓存获取（优化：减少数据库查询）
 	if s.cache != nil {
 		if cached, err := s.cache.Get(ctx, cacheKey).Result(); err == nil {
 			var cachedUser models.User
 			if err := json.Unmarshal([]byte(cached), &cachedUser); err == nil {
 				if cachedUser.HashedPassword != nil && cachedUser.IsActive && !cachedUser.IsDeleted() && cachedUser.AuthProvider == models.AuthProviderEmail {
+					// 快速密码验证
 					if bcrypt.CompareHashAndPassword([]byte(*cachedUser.HashedPassword), []byte(req.Password)) == nil {
-						// 生成访问令牌和刷新令牌
-						token, err := auth.GenerateToken(cachedUser.Email)
-						if err != nil {
-							return "", "", models.User{}, ErrInternal
+						// 并发生成令牌（优化性能）
+						tokenChan := make(chan string, 1)
+						refreshTokenChan := make(chan struct {
+							token string
+							id    string
+						}, 1)
+						errChan := make(chan error, 2)
+
+						// 并发生成访问令牌
+						go func() {
+							token, err := auth.GenerateToken(cachedUser.Email)
+							if err != nil {
+								errChan <- err
+								return
+							}
+							tokenChan <- token
+						}()
+
+						// 并发生成刷新令牌
+						go func() {
+							refreshToken, tokenID, err := auth.GenerateRefreshToken(cachedUser.Email)
+							if err != nil {
+								errChan <- err
+								return
+							}
+							refreshTokenChan <- struct {
+								token string
+								id    string
+							}{refreshToken, tokenID}
+						}()
+
+						// 等待令牌生成完成
+						var token, refreshToken, tokenID string
+						for i := 0; i < 2; i++ {
+							select {
+							case token = <-tokenChan:
+							case refreshData := <-refreshTokenChan:
+								refreshToken = refreshData.token
+								tokenID = refreshData.id
+							case <-errChan:
+								return "", "", models.User{}, ErrInternal
+							case <-ctx.Done():
+								return "", "", models.User{}, ErrInternal
+							}
 						}
-						refreshToken, _, err := auth.GenerateRefreshToken(cachedUser.Email)
-						if err != nil {
-							return "", "", models.User{}, ErrInternal
-						}
+
+						// 异步存储刷新令牌（不阻塞响应）
+						go func() {
+							refreshCacheKey := fmt.Sprintf("refresh_token:%s:%s", cachedUser.Email, tokenID)
+							_ = s.cache.Set(context.Background(), refreshCacheKey, "valid", 7*24*time.Hour).Err()
+						}()
+
 						return token, refreshToken, cachedUser, nil
 					}
 				}
@@ -65,7 +109,7 @@ func (s *userService) Login(ctx context.Context, req models.LoginUser) (string, 
 		}
 	}
 
-	// 从数据库查询
+	// 从数据库查询（缓存未命中）
 	u, err := s.repo.FindActiveByEmail(ctx, req.Email)
 	if err != nil {
 		return "", "", models.User{}, ErrInternal
@@ -86,33 +130,68 @@ func (s *userService) Login(ctx context.Context, req models.LoginUser) (string, 
 		return "", "", models.User{}, ErrUnauthorized
 	}
 
-	// 更新缓存
-	if s.cache != nil {
-		go func() {
+	// 并发生成令牌和更新缓存（优化：减少总响应时间）
+	tokenChan := make(chan string, 1)
+	refreshTokenChan := make(chan struct {
+		token string
+		id    string
+	}, 1)
+	errChan := make(chan error, 2)
+
+	// 并发生成访问令牌
+	go func() {
+		token, err := auth.GenerateToken(u.Email)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		tokenChan <- token
+	}()
+
+	// 并发生成刷新令牌
+	go func() {
+		refreshToken, tokenID, err := auth.GenerateRefreshToken(u.Email)
+		if err != nil {
+			errChan <- err
+			return
+		}
+		refreshTokenChan <- struct {
+			token string
+			id    string
+		}{refreshToken, tokenID}
+	}()
+
+	// 并发更新用户缓存
+	go func() {
+		if s.cache != nil {
 			if b, err := json.Marshal(*u); err == nil {
-				_ = s.cache.Set(ctx, cacheKey, b, 5*time.Minute).Err()
+				_ = s.cache.Set(context.Background(), cacheKey, b, 10*time.Minute).Err() // 延长缓存时间
 			}
-		}()
-	}
+		}
+	}()
 
-	// 生成访问令牌和刷新令牌
-	token, err := auth.GenerateToken(u.Email)
-	if err != nil {
-		return "", "", models.User{}, ErrInternal
-	}
-	refreshToken, tokenID, err := auth.GenerateRefreshToken(u.Email)
-	if err != nil {
-		return "", "", models.User{}, ErrInternal
-	}
-
-	// 将刷新令牌存储到缓存中，用于验证和撤销
-	if s.cache != nil {
-		refreshCacheKey := fmt.Sprintf("refresh_token:%s:%s", u.Email, tokenID)
-		if err := s.cache.Set(ctx, refreshCacheKey, "valid", 7*24*time.Hour).Err(); err != nil {
-			fmt.Printf("Failed to store refresh token in cache during login: %v\n", err)
-			// 继续执行，不因为缓存失败而阻止登录
+	// 等待令牌生成完成
+	var token, refreshToken, tokenID string
+	for i := 0; i < 2; i++ {
+		select {
+		case token = <-tokenChan:
+		case refreshData := <-refreshTokenChan:
+			refreshToken = refreshData.token
+			tokenID = refreshData.id
+		case <-errChan:
+			return "", "", models.User{}, ErrInternal
+		case <-ctx.Done():
+			return "", "", models.User{}, ErrInternal
 		}
 	}
+
+	// 异步存储刷新令牌（不阻塞响应）
+	go func() {
+		if s.cache != nil {
+			refreshCacheKey := fmt.Sprintf("refresh_token:%s:%s", u.Email, tokenID)
+			_ = s.cache.Set(context.Background(), refreshCacheKey, "valid", 7*24*time.Hour).Err()
+		}
+	}()
 
 	return token, refreshToken, *u, nil
 }

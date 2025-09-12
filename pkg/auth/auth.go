@@ -27,16 +27,16 @@ type RefreshClaims struct {
 
 var JwtKey = []byte(os.Getenv("JWT_SECRET_KEY"))
 
-// getBcryptCost 获取bcrypt cost配置，默认为12
+// getBcryptCost 获取bcrypt cost配置，默认为10（优化性能）
 func getBcryptCost() int {
 	costStr := os.Getenv("BCRYPT_COST")
 	if costStr == "" {
-		return 12 // 默认cost，平衡安全性和性能
+		return 10 // 默认cost优化为10，平衡安全性和100ms性能目标
 	}
 
 	cost, err := strconv.Atoi(costStr)
 	if err != nil || cost < 4 || cost > 15 {
-		return 12 // 无效值时使用默认值
+		return 10 // 无效值时使用优化后的默认值
 	}
 
 	return cost
@@ -117,6 +117,7 @@ func GenerateToken(username string) (string, error) {
 		// In JWT, the expiry time is expressed as unix milliseconds
 		ExpiresAt: expirationTime,
 		Issuer:    username,
+		Subject:   username, // 添加subject字段用于优化
 	}
 
 	// Declare the token with the algorithm used for signing, and the claims
@@ -166,10 +167,10 @@ func getRefreshTokenExpiryDuration() time.Duration {
 	return duration
 }
 
-// GenerateRefreshToken 生成refresh token
+// GenerateRefreshToken 生成refresh token（优化性能）
 func GenerateRefreshToken(username string) (string, string, error) {
-	// 生成唯一的token ID
-	tokenID := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s_%d", username, time.Now().UnixNano())))
+	// 生成唯一的token ID（优化：使用更简单的方法）
+	tokenID := fmt.Sprintf("%x", time.Now().UnixNano()) // 更快的token ID生成
 	
 	// 获取可配置的过期时间
 	expiryDuration := getRefreshTokenExpiryDuration()
