@@ -63,8 +63,9 @@ type UserResponse struct {
 
 // LoginResponse 登录响应DTO
 type LoginResponse struct {
-	Token        string `json:"token"`
-	RefreshToken string `json:"refresh_token"`
+	Token        string       `json:"token"`
+	RefreshToken string       `json:"refresh_token"`
+	User         UserResponse `json:"user"`
 }
 
 // RegisterResponse 注册响应DTO

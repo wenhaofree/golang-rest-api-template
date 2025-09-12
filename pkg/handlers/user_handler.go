@@ -75,6 +75,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 	loginResp := dto.LoginResponse{
 		Token:        token,
 		RefreshToken: refreshToken,
+		User:         dto.UserResponse{}.FromUser(user),
 	}
 
 	// 5. 异步更新最后登录时间
@@ -181,6 +182,7 @@ func (h *UserHandler) ThirdPartyLogin(c *gin.Context) {
 	loginResp := dto.LoginResponse{
 		Token:        token,
 		RefreshToken: refreshToken,
+		User:         dto.UserResponse{}.FromUser(user),
 	}
 
 	// 5. 异步更新最后登录时间
