@@ -75,9 +75,8 @@ func (h *UserHandler) Login(c *gin.Context) {
 	loginResp := dto.LoginResponse{
 		Token:        token,
 		RefreshToken: refreshToken,
-		User:         dto.UserResponse{}.FromUser(user),
 	}
-	
+
 	// 5. 异步更新最后登录时间
 	go func() {
 		// 创建一个新的context，避免原请求取消影响更新操作
@@ -88,7 +87,7 @@ func (h *UserHandler) Login(c *gin.Context) {
 			fmt.Printf("Failed to update last login time for user %s: %v\n", user.Email, err)
 		}
 	}()
-	
+
 	response.Success(c, loginResp)
 }
 
@@ -182,9 +181,8 @@ func (h *UserHandler) ThirdPartyLogin(c *gin.Context) {
 	loginResp := dto.LoginResponse{
 		Token:        token,
 		RefreshToken: refreshToken,
-		User:         dto.UserResponse{}.FromUser(user),
 	}
-	
+
 	// 5. 异步更新最后登录时间
 	go func() {
 		// 创建一个新的context，避免原请求取消影响更新操作
@@ -194,7 +192,7 @@ func (h *UserHandler) ThirdPartyLogin(c *gin.Context) {
 			fmt.Printf("Failed to update last login time for user %s: %v\n", user.Email, err)
 		}
 	}()
-	
+
 	response.Success(c, loginResp)
 }
 
